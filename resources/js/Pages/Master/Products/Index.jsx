@@ -45,6 +45,9 @@ export default function Index({ products }) {
                                         Nama
                                     </th>
                                     <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
+                                        Kategori
+                                    </th>
+                                    <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
                                         Barcode
                                     </th>
                                     <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
@@ -74,6 +77,9 @@ export default function Index({ products }) {
                                         </td>
                                         <td className="whitespace-nowrap px-6 py-4 text-sm font-medium text-gray-900">
                                             {product.name}
+                                        </td>
+                                        <td className="whitespace-nowrap px-6 py-4 text-sm text-gray-600">
+                                            {product.product_category?.name ?? '-'}
                                         </td>
                                         <td className="whitespace-nowrap px-6 py-4 font-mono text-sm text-gray-600">
                                             {product.barcode ?? '-'}
@@ -124,7 +130,7 @@ export default function Index({ products }) {
                                 {products.length === 0 && (
                                     <tr>
                                         <td
-                                            colSpan={8}
+                                            colSpan={9}
                                             className="px-6 py-4 text-center text-sm text-gray-500"
                                         >
                                             Belum ada produk.

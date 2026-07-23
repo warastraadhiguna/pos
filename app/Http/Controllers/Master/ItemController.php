@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Master;
 use App\Http\Controllers\Controller;
 use App\Models\Account;
 use App\Models\Item;
+use App\Models\ItemCategory;
 use App\Models\Uom;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -19,7 +20,7 @@ class ItemController extends Controller
     public function index(): Response
     {
         return Inertia::render('Master/Items/Index', [
-            'items' => Item::with(['baseUom', 'purchaseUom'])->orderBy('sku')->get(),
+            'items' => Item::with(['baseUom', 'purchaseUom', 'itemCategory'])->orderBy('sku')->get(),
         ]);
     }
 
@@ -140,6 +141,7 @@ class ItemController extends Controller
             'purchase_uom_id' => ['required', 'exists:uoms,id'],
             'standard_cost' => ['required', 'numeric', 'min:0'],
             'inventory_account_id' => ['required', 'exists:accounts,id'],
+            'item_category_id' => ['nullable', 'exists:item_categories,id'],
             'is_active' => ['boolean'],
         ]);
 
@@ -149,13 +151,14 @@ class ItemController extends Controller
     }
 
     /**
-     * @return array{uoms: \Illuminate\Support\Collection, accounts: \Illuminate\Support\Collection}
+     * @return array{uoms: \Illuminate\Support\Collection, accounts: \Illuminate\Support\Collection, itemCategories: \Illuminate\Support\Collection}
      */
     private function formOptions(): array
     {
         return [
             'uoms' => Uom::orderBy('code')->get(),
             'accounts' => Account::where('type', 'asset')->orderBy('code')->get(),
+            'itemCategories' => ItemCategory::orderBy('name')->get(),
         ];
     }
 }

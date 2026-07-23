@@ -10,7 +10,7 @@ import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import { Head, Link, useForm } from '@inertiajs/react';
 import { useRef } from 'react';
 
-export default function Form({ item, uoms, accounts }) {
+export default function Form({ item, uoms, accounts, itemCategories }) {
     const editing = item !== null;
 
     const { data, setData, post, put, processing, errors } = useForm({
@@ -21,6 +21,7 @@ export default function Form({ item, uoms, accounts }) {
         purchase_uom_id: item?.purchase_uom_id ?? '',
         standard_cost: item?.standard_cost ?? '0',
         inventory_account_id: item?.inventory_account_id ?? '',
+        item_category_id: item?.item_category_id ?? '',
         is_active: item?.is_active ?? true,
     });
 
@@ -261,6 +262,38 @@ export default function Form({ item, uoms, accounts }) {
                                 <InputError
                                     className="mt-2"
                                     message={errors.inventory_account_id}
+                                />
+                            </div>
+
+                            <div>
+                                <InputLabel
+                                    htmlFor="item_category_id"
+                                    value="Kategori Item"
+                                />
+                                <SelectInput
+                                    id="item_category_id"
+                                    className="mt-1 block w-full"
+                                    value={data.item_category_id}
+                                    onChange={(e) =>
+                                        setData(
+                                            'item_category_id',
+                                            e.target.value,
+                                        )
+                                    }
+                                >
+                                    <option value="">Tanpa kategori</option>
+                                    {itemCategories.map((category) => (
+                                        <option
+                                            key={category.id}
+                                            value={category.id}
+                                        >
+                                            {category.name}
+                                        </option>
+                                    ))}
+                                </SelectInput>
+                                <InputError
+                                    className="mt-2"
+                                    message={errors.item_category_id}
                                 />
                             </div>
 

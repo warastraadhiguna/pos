@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Master;
 
 use App\Http\Controllers\Controller;
 use App\Models\Product;
+use App\Models\ProductCategory;
 use App\Models\TaxRate;
 use App\Models\Uom;
 use App\Services\ProductImageService;
@@ -22,7 +23,7 @@ class ProductController extends Controller
     public function index(): Response
     {
         return Inertia::render('Master/Products/Index', [
-            'products' => Product::with('taxRate')->withCount('components')->orderBy('name')->get(),
+            'products' => Product::with(['taxRate', 'productCategory'])->withCount('components')->orderBy('name')->get(),
         ]);
     }
 
@@ -110,6 +111,7 @@ class ProductController extends Controller
             ],
             'sell_price' => ['required', 'numeric', 'min:0'],
             'tax_rate_id' => ['nullable', 'exists:tax_rates,id'],
+            'product_category_id' => ['nullable', 'exists:product_categories,id'],
             'is_active' => ['boolean'],
             'components' => ['array'],
             'components.*.item_id' => ['required', 'exists:items,id'],
@@ -135,6 +137,7 @@ class ProductController extends Controller
                 'barcode' => $validated['barcode'] ?: null,
                 'sell_price' => $validated['sell_price'],
                 'tax_rate_id' => $validated['tax_rate_id'] ?? null,
+                'product_category_id' => $validated['product_category_id'] ?? null,
                 'is_active' => $request->boolean('is_active'),
             ],
             'components' => $validated['components'] ?? [],
@@ -148,13 +151,14 @@ class ProductController extends Controller
      * searches on demand (Master\ItemController::search()) instead of the
      * page shipping the entire catalog up front.
      *
-     * @return array{uoms: \Illuminate\Support\Collection, taxRates: \Illuminate\Support\Collection}
+     * @return array{uoms: \Illuminate\Support\Collection, taxRates: \Illuminate\Support\Collection, productCategories: \Illuminate\Support\Collection}
      */
     private function formOptions(): array
     {
         return [
             'uoms' => Uom::orderBy('code')->get(),
             'taxRates' => TaxRate::orderBy('name')->get(),
+            'productCategories' => ProductCategory::orderBy('name')->get(),
         ];
     }
 }

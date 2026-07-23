@@ -4,6 +4,7 @@ namespace Tests\Feature\Master;
 
 use App\Models\Permission;
 use App\Models\Product;
+use App\Models\ProductCategory;
 use App\Models\Role;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -199,6 +200,60 @@ class ProductControllerTest extends TestCase
         ]));
 
         $response->assertSessionHasErrors(['image']);
+        $this->assertSame(0, Product::count());
+    }
+
+    public function test_product_category_can_be_assigned_when_creating(): void
+    {
+        $this->actingAsAuthorizedUser();
+        $category = ProductCategory::create(['name' => 'Minuman']);
+
+        $this->post(route('master.products.store'), $this->baseProductPayload([
+            'product_category_id' => $category->id,
+        ]))->assertRedirect(route('master.products.index'));
+
+        $product = Product::where('name', 'Produk Uji')->firstOrFail();
+        $this->assertSame($category->id, $product->product_category_id);
+    }
+
+    public function test_product_category_is_optional_and_defaults_to_null(): void
+    {
+        $this->actingAsAuthorizedUser();
+
+        $this->post(route('master.products.store'), $this->baseProductPayload())
+            ->assertRedirect(route('master.products.index'));
+
+        $product = Product::where('name', 'Produk Uji')->firstOrFail();
+        $this->assertNull($product->product_category_id);
+    }
+
+    public function test_product_category_can_be_changed_on_update(): void
+    {
+        $this->actingAsAuthorizedUser();
+        $minuman = ProductCategory::create(['name' => 'Minuman']);
+        $makanan = ProductCategory::create(['name' => 'Makanan']);
+
+        $this->post(route('master.products.store'), $this->baseProductPayload([
+            'product_category_id' => $minuman->id,
+        ]));
+        $product = Product::where('name', 'Produk Uji')->firstOrFail();
+
+        $this->put(route('master.products.update', $product), $this->baseProductPayload([
+            'product_category_id' => $makanan->id,
+        ]))->assertRedirect(route('master.products.index'));
+
+        $this->assertSame($makanan->id, $product->fresh()->product_category_id);
+    }
+
+    public function test_a_nonexistent_product_category_id_is_rejected(): void
+    {
+        $this->actingAsAuthorizedUser();
+
+        $response = $this->post(route('master.products.store'), $this->baseProductPayload([
+            'product_category_id' => 99999,
+        ]));
+
+        $response->assertSessionHasErrors(['product_category_id']);
         $this->assertSame(0, Product::count());
     }
 }

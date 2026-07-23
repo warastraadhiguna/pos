@@ -23,7 +23,7 @@ function isDirectSaleComponents(components) {
     return components.length === 1 && Number(components[0].qty) === 1;
 }
 
-export default function Form({ product, uoms, taxRates }) {
+export default function Form({ product, uoms, taxRates, productCategories }) {
     const editing = product !== null;
 
     const { data, setData, post, put, processing, errors } = useForm({
@@ -31,6 +31,7 @@ export default function Form({ product, uoms, taxRates }) {
         barcode: product?.barcode ?? '',
         sell_price: product?.sell_price ?? '0',
         tax_rate_id: product?.tax_rate_id ?? '',
+        product_category_id: product?.product_category_id ?? '',
         is_active: product?.is_active ?? true,
         components: (product?.components ?? []).map((c) => ({
             item_id: c.item_id,
@@ -307,6 +308,38 @@ export default function Form({ product, uoms, taxRates }) {
                                 <InputError
                                     className="mt-2"
                                     message={errors.image}
+                                />
+                            </div>
+
+                            <div>
+                                <InputLabel
+                                    htmlFor="product_category_id"
+                                    value="Kategori Produk"
+                                />
+                                <SelectInput
+                                    id="product_category_id"
+                                    className="mt-1 block w-full"
+                                    value={data.product_category_id}
+                                    onChange={(e) =>
+                                        setData(
+                                            'product_category_id',
+                                            e.target.value,
+                                        )
+                                    }
+                                >
+                                    <option value="">Tanpa kategori</option>
+                                    {productCategories.map((category) => (
+                                        <option
+                                            key={category.id}
+                                            value={category.id}
+                                        >
+                                            {category.name}
+                                        </option>
+                                    ))}
+                                </SelectInput>
+                                <InputError
+                                    className="mt-2"
+                                    message={errors.product_category_id}
                                 />
                             </div>
 
