@@ -1,5 +1,6 @@
 import InputError from '@/Components/InputError';
 import InputLabel from '@/Components/InputLabel';
+import PasswordInput from '@/Components/PasswordInput';
 import PrimaryButton from '@/Components/PrimaryButton';
 import SecondaryButton from '@/Components/SecondaryButton';
 import SelectInput from '@/Components/SelectInput';
@@ -117,9 +118,8 @@ export default function Form({ user, roles }) {
                                     htmlFor="password"
                                     value={editing ? 'Kata Sandi Baru' : 'Kata Sandi'}
                                 />
-                                <TextInput
+                                <PasswordInput
                                     id="password"
-                                    type="password"
                                     className="mt-1 block w-full"
                                     value={data.password}
                                     onChange={(e) => setData('password', e.target.value)}
