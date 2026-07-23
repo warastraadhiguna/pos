@@ -1,0 +1,1 @@
+import{r as t,j as a}from"./app-CJ3l5wfQ.js";const m=t.forwardRef(function({className:r="",children:e,...s},o){return a.jsx("select",{...s,className:"rounded-md border-gray-300 shadow-sm focus:border-primary focus:ring-primary "+r,ref:o,children:e})});export{m as S};
