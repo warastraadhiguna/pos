@@ -189,7 +189,13 @@ class InventoryService
      */
     public function convertToItemBaseUom(Item $item, Uom $fromUom, string $qty): string
     {
-        if ($fromUom->id === $item->base_uom_id) {
+        // (int) cast eksplisit -- lihat alasan yang sama di
+        // CashAccountService::assertValidCashAccount() (insiden produksi
+        // "Akun bukan Kas/Bank" karena strict compare id vs foreign key
+        // yang kembali sebagai string mentah dari driver PDO tertentu).
+        // Salah di sini berarti konversi HPP/stok jalan lewat jalur yang
+        // salah walau satuannya sebenarnya identik.
+        if ($fromUom->id === (int) $item->base_uom_id) {
             return $qty;
         }
 

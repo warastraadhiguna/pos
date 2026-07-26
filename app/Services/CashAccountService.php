@@ -50,7 +50,15 @@ class CashAccountService
     {
         $account = Account::where('code', $code)->first();
 
-        if (! $account || $account->parent_id !== $this->groupHeaderId() || ! $account->is_active) {
+        // (int) cast eksplisit di SINI, di atas cast 'parent_id' => 'integer'
+        // yang sudah ada di model Account -- dua lapis sengaja, bukan
+        // redundan: ini jalur validasi yang MENOLAK transaksi penjualan
+        // asli kalau salah (insiden produksi "Akun [1-1000] bukan Kas/Bank
+        // yang aktif" — data benar, tapi parent_id kebetulan kembali
+        // sebagai string dari driver PDO tertentu, `!==` gagal). Cast di
+        // sini memastikan perbandingan tetap aman walau suatu saat model
+        // Account diinstansiasi lewat jalur yang tidak melalui cast biasa.
+        if (! $account || (int) $account->parent_id !== $this->groupHeaderId() || ! $account->is_active) {
             throw new InvalidArgumentException("Akun [{$code}] bukan akun Kas/Bank yang aktif.");
         }
     }
@@ -89,7 +97,7 @@ class CashAccountService
      */
     public function setCashAccountActive(Account $account, bool $active): Account
     {
-        if ($account->parent_id !== $this->groupHeaderId()) {
+        if ((int) $account->parent_id !== $this->groupHeaderId()) {
             throw new InvalidArgumentException("Akun [{$account->code}] bukan akun Kas/Bank.");
         }
 

@@ -112,6 +112,37 @@ class SaleControllerTest extends TestCase
         $response->assertJsonPath('data.lines.0.product_name', 'Widget Product');
     }
 
+    /**
+     * Reproduksi persis payload mobile (lihat HttpSalePushRepository._payload
+     * di pos_mobile — TIDAK ADA field cash_account_code sama sekali) --
+     * membuktikan jalur default Kas (1-1000) benar-benar lolos
+     * CashAccountService::assertValidCashAccount() end-to-end lewat HTTP,
+     * bukan cuma lewat pemanggilan service langsung. Ditambahkan saat
+     * menyelidiki laporan "Akun [1-1000] bukan akun Kas/Bank yang aktif"
+     * di produksi -- kalau test ini hijau, kode & data seed lokal sudah
+     * pasti benar, dan akar masalah ada di luar kode (environment/deploy
+     * produksi), bukan di sini.
+     */
+    public function test_a_mobile_sale_without_cash_account_code_defaults_to_and_passes_validation_for_kas(): void
+    {
+        [, $product] = $this->makeWidgetProduct();
+
+        $response = $this->postJson('/api/v1/sales', [
+            'local_uuid' => (string) Str::uuid(),
+            'date' => '2026-07-04',
+            'payment_method' => 'cash',
+            'cash_received' => 10000,
+            'change_amount' => 0,
+            'lines' => [
+                ['product_id' => $product->id, 'qty' => 2, 'unit_price' => 5000],
+            ],
+        ]);
+
+        $response->assertCreated();
+        $sale = Sale::firstOrFail();
+        $this->assertSame('1-1000', $sale->cash_account_code);
+    }
+
     public function test_posting_a_sale_deducts_stock_and_returns_the_created_sale(): void
     {
         [$item, $product] = $this->makeWidgetProduct();

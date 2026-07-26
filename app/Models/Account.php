@@ -13,6 +13,16 @@ class Account extends Model
     protected function casts(): array
     {
         return [
+            // Beberapa driver PDO/MySQL mengembalikan kolom integer biasa
+            // (bukan primary key -- Eloquent sudah otomatis meng-cast
+            // primary key ke int, tapi TIDAK untuk foreign key seperti ini)
+            // sebagai string mentah ("6", bukan 6). Tanpa cast eksplisit
+            // ini, perbandingan strict (`===`/`!==`) terhadap id (int) bisa
+            // salah di environment tertentu walau datanya benar -- persis
+            // penyebab bug "Akun [1-1000] bukan akun Kas/Bank yang aktif"
+            // di produksi (CashAccountService::assertValidCashAccount()
+            // membandingkan parent_id dengan groupHeaderId()).
+            'parent_id' => 'integer',
             'is_active' => 'boolean',
         ];
     }

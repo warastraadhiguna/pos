@@ -121,4 +121,39 @@ class CashAccountServiceTest extends TestCase
 
         $this->cashAccounts->setCashAccountActive(Account::where('code', '1-1200')->firstOrFail(), false);
     }
+
+    /**
+     * Reproduksi persis insiden produksi: data BENAR (parent_id memang
+     * menunjuk ke header Kas & Bank), tapi driver PDO/MySQL tertentu
+     * mengembalikan kolom integer biasa sebagai string mentah ("6", bukan
+     * 6) -- lingkungan test ini sendiri kebetulan SELALU mengembalikan int
+     * asli, jadi tidak bisa mereproduksi bug ini lewat query biasa.
+     * `Account::newFromBuilder()` dipakai di sini karena itu PERSIS method
+     * internal Eloquent yang mengubah satu baris hasil query mentah jadi
+     * instance model -- memberinya array dengan parent_id berupa STRING
+     * mensimulasikan "andai PDO benar-benar mengembalikan string" dengan
+     * tepat, terlepas dari perilaku driver test ini sendiri.
+     */
+    public function test_account_parent_id_cast_normalizes_a_raw_string_value_to_int(): void
+    {
+        $header = Account::where('code', '1-1')->firstOrFail();
+        $kas = Account::where('code', '1-1000')->firstOrFail();
+
+        $hydratedWithRawStringParentId = $kas->newFromBuilder(
+            array_merge($kas->getAttributes(), ['parent_id' => (string) $header->id]),
+        );
+
+        $this->assertIsInt(
+            $hydratedWithRawStringParentId->parent_id,
+            'Cast integer di model Account harus menormalkan parent_id jadi int saat diakses, apa pun tipe mentah dari driver.',
+        );
+        $this->assertSame($header->id, $hydratedWithRawStringParentId->parent_id);
+
+        // ...dan karena assertValidCashAccount() SELALU membaca parent_id
+        // lewat query Eloquent biasa (yang melalui cast yang sama), akun
+        // ini tetap lolos validasi walau seandainya driver produksi
+        // mengembalikan parent_id sebagai string mentah seperti di atas.
+        $this->cashAccounts->assertValidCashAccount('1-1000');
+        $this->addToAssertionCount(1); // tidak melempar exception = lolos
+    }
 }

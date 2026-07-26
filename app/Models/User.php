@@ -29,6 +29,11 @@ class User extends Authenticatable
         return [
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
+            // Sama alasannya dengan `Account::parent_id` -- role_id
+            // dibandingkan strict (`===`) terhadap `Role::id` (int) di
+            // CreateAdminCommand, rentan bug yang sama kalau driver PDO
+            // mengembalikannya sebagai string mentah.
+            'role_id' => 'integer',
         ];
     }
 

@@ -305,7 +305,10 @@ class PurchaseService
      */
     private function resolveUomFactor(Item $item, Uom $fromUom): string
     {
-        if ($fromUom->id === $item->base_uom_id) {
+        // (int) cast eksplisit -- lihat alasan yang sama di
+        // InventoryService::convertToItemBaseUom() / insiden produksi
+        // "Akun bukan Kas/Bank" (CashAccountService).
+        if ($fromUom->id === (int) $item->base_uom_id) {
             return '1';
         }
 

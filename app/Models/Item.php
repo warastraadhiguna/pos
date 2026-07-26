@@ -25,6 +25,15 @@ class Item extends Model
         return [
             'standard_cost' => 'decimal:4',
             'is_active' => 'boolean',
+            // Sama alasannya dengan `Account::parent_id` -- foreign key
+            // biasa (bukan primary key) tidak otomatis di-cast Eloquent,
+            // dan sebagian driver PDO/MySQL bisa mengembalikannya sebagai
+            // string mentah. `base_uom_id` dibandingkan strict (`===`)
+            // terhadap `Uom::id` (int) di InventoryService/PurchaseService
+            // -- tanpa cast ini, perbandingan itu rentan bug yang sama
+            // persis dengan "Akun [1-1000] bukan Kas/Bank yang aktif".
+            'base_uom_id' => 'integer',
+            'purchase_uom_id' => 'integer',
         ];
     }
 
