@@ -22,6 +22,7 @@ use Illuminate\Database\Eloquent\Model;
     'show_stock_on_button',
     'show_product_image',
     'payment_quick_amounts',
+    'mobile_print_receipt',
 ])]
 class CompanySetting extends Model
 {
@@ -45,6 +46,7 @@ class CompanySetting extends Model
             'ppn_active' => 'boolean',
             'show_stock_on_button' => 'boolean',
             'show_product_image' => 'boolean',
+            'mobile_print_receipt' => 'boolean',
         ];
     }
 

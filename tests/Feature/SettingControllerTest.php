@@ -55,7 +55,8 @@ class SettingControllerTest extends TestCase
             ->where('receiptFooter', 'Terima kasih atas kunjungan Anda')
             ->where('showStockOnButton', true)
             ->where('showProductImage', false)
-            ->where('paymentQuickAmounts', [5000, 10000, 20000, 50000, 100000]),
+            ->where('paymentQuickAmounts', [5000, 10000, 20000, 50000, 100000])
+            ->where('mobilePrintReceipt', true),
         );
     }
 
@@ -159,6 +160,36 @@ class SettingControllerTest extends TestCase
 
         $response->assertForbidden();
         $this->assertTrue(CompanySetting::current()->fresh()->show_stock_on_button);
+    }
+
+    public function test_mobile_print_receipt_defaults_to_true(): void
+    {
+        $this->assertTrue(CompanySetting::current()->mobile_print_receipt);
+    }
+
+    public function test_admin_can_turn_off_mobile_print_receipt_without_creating_a_log_entry(): void
+    {
+        $admin = User::factory()->create(['role_id' => $this->roleWith(['company-settings.manage'])->id]);
+
+        $response = $this->actingAs($admin)->put('/pengaturan/cetak-struk-mobile', [
+            'mobile_print_receipt' => false,
+        ]);
+
+        $response->assertRedirect(route('pengaturan.index'));
+        $this->assertFalse(CompanySetting::current()->fresh()->mobile_print_receipt);
+        $this->assertSame(0, CompanySettingLog::count());
+    }
+
+    public function test_non_admin_cannot_update_mobile_print_receipt(): void
+    {
+        $kasir = User::factory()->create(['role_id' => $this->roleWith(['kasir.access'])->id]);
+
+        $response = $this->actingAs($kasir)->put('/pengaturan/cetak-struk-mobile', [
+            'mobile_print_receipt' => false,
+        ]);
+
+        $response->assertForbidden();
+        $this->assertTrue(CompanySetting::current()->fresh()->mobile_print_receipt);
     }
 
     public function test_admin_can_change_product_display_mode_without_creating_a_log_entry(): void

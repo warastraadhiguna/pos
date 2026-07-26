@@ -28,6 +28,7 @@ export default function Index({
     showStockOnButton,
     showProductImage,
     paymentQuickAmounts,
+    mobilePrintReceipt,
     logs,
 }) {
     const [confirming, setConfirming] = useState(false);
@@ -47,6 +48,9 @@ export default function Index({
 
     const [footerForm, setFooterForm] = useState(receiptFooter ?? '');
     const [savingFooter, setSavingFooter] = useState(false);
+
+    const [printReceipt, setPrintReceipt] = useState(mobilePrintReceipt);
+    const [savingPrintReceipt, setSavingPrintReceipt] = useState(false);
 
     // String (bukan number) di state INPUT supaya kolom bisa dikosongkan
     // sementara saat diketik ulang tanpa langsung jadi "0" -- dikonversi
@@ -162,6 +166,22 @@ export default function Index({
             {
                 preserveScroll: true,
                 onFinish: () => setSavingFooter(false),
+            },
+        );
+    };
+
+    const submitMobilePrintReceipt = (checked) => {
+        if (savingPrintReceipt) return;
+        const previous = printReceipt;
+        setPrintReceipt(checked);
+        setSavingPrintReceipt(true);
+        router.put(
+            route('pengaturan.cetak-struk-mobile.update'),
+            { mobile_print_receipt: checked },
+            {
+                preserveScroll: true,
+                onError: () => setPrintReceipt(previous),
+                onFinish: () => setSavingPrintReceipt(false),
             },
         );
     };
@@ -452,6 +472,32 @@ export default function Index({
                                     Simpan Footer Struk
                                 </PrimaryButton>
                             </form>
+
+                            <div className="mt-6 border-t border-gray-100 pt-4">
+                                <label className="flex cursor-pointer items-start gap-3">
+                                    <input
+                                        type="checkbox"
+                                        className="mt-1 rounded text-primary focus:ring-primary"
+                                        checked={printReceipt}
+                                        disabled={savingPrintReceipt}
+                                        onChange={(e) =>
+                                            submitMobilePrintReceipt(e.target.checked)
+                                        }
+                                    />
+                                    <span>
+                                        <span className="block font-medium text-gray-900">
+                                            Cetak struk otomatis di HP kasir
+                                        </span>
+                                        <span className="block text-sm text-gray-500">
+                                            Matikan kalau toko sedang tidak
+                                            membawa printer (mis. jualan di
+                                            luar) — checkout di HP tidak akan
+                                            mencoba mencetak sama sekali,
+                                            transaksi tetap tersimpan normal.
+                                        </span>
+                                    </span>
+                                </label>
+                            </div>
                         </div>
                     </section>
 

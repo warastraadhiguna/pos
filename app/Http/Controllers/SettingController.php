@@ -41,6 +41,7 @@ class SettingController extends Controller
             'showStockOnButton' => $setting->show_stock_on_button,
             'showProductImage' => $setting->show_product_image,
             'paymentQuickAmounts' => $setting->payment_quick_amounts,
+            'mobilePrintReceipt' => $setting->mobile_print_receipt,
             'logs' => $logs,
         ]);
     }
@@ -193,6 +194,25 @@ class SettingController extends Controller
         return Redirect::route('pengaturan.index')->with(
             'success',
             'Nominal pembayaran cepat diperbarui.',
+        );
+    }
+
+    /**
+     * Saklar "cetak struk otomatis di HP kasir" -- murni preferensi
+     * operasional (bawa/tidak bawa printer), sengaja TIDAK dicatat ke
+     * company_setting_logs, pola sama dengan setting tampilan lainnya.
+     */
+    public function updateMobilePrintReceipt(Request $request): RedirectResponse
+    {
+        $data = $request->validate(['mobile_print_receipt' => ['required', 'boolean']]);
+
+        CompanySetting::current()->update(['mobile_print_receipt' => $data['mobile_print_receipt']]);
+
+        return Redirect::route('pengaturan.index')->with(
+            'success',
+            $data['mobile_print_receipt']
+                ? 'Cetak struk otomatis di HP kasir diaktifkan.'
+                : 'Cetak struk otomatis di HP kasir dimatikan — checkout tidak akan mencoba mencetak.',
         );
     }
 }

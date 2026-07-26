@@ -149,6 +149,7 @@ class ProductControllerTest extends TestCase
             'show_stock_on_button' => false,
             'show_product_image' => true,
             'payment_quick_amounts' => [2000, 15000],
+            'mobile_print_receipt' => false,
         ]);
 
         $response = $this->getJson('/api/v1/products');
@@ -161,6 +162,7 @@ class ProductControllerTest extends TestCase
         $response->assertJsonPath('meta.show_stock_on_button', false);
         $response->assertJsonPath('meta.show_product_image', true);
         $response->assertJsonPath('meta.payment_quick_amounts', [2000, 15000]);
+        $response->assertJsonPath('meta.mobile_print_receipt', false);
     }
 
     public function test_meta_defaults_receipt_footer_and_store_fields(): void
@@ -175,6 +177,7 @@ class ProductControllerTest extends TestCase
         $response->assertJsonPath('meta.show_stock_on_button', true);
         $response->assertJsonPath('meta.show_product_image', false);
         $response->assertJsonPath('meta.payment_quick_amounts', [5000, 10000, 20000, 50000, 100000]);
+        $response->assertJsonPath('meta.mobile_print_receipt', true);
     }
 
     public function test_includes_image_url_and_hash_when_product_has_an_image(): void

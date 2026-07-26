@@ -43,8 +43,8 @@ class ProductController extends Controller
      * preferensi tampilan, tidak memengaruhi data produk itu sendiri.
      *
      * `meta.store_name`/`store_address`/`store_phone`/`receipt_footer`/
-     * `show_stock_on_button`/`show_product_image`/`payment_quick_amounts`
-     * piggyback the same way — semuanya preferensi/identitas ringan yang
+     * `show_stock_on_button`/`show_product_image`/`payment_quick_amounts`/
+     * `mobile_print_receipt` piggyback the same way — semuanya preferensi/identitas ringan yang
      * jarang berubah, jadi cukup ikut sync produk yang sudah ada, bukan
      * endpoint terpisah. BEDA dari stok itu sendiri (lihat stock() di
      * bawah) yang berubah setiap transaksi dan sengaja endpoint TERPISAH
@@ -74,6 +74,7 @@ class ProductController extends Controller
                 'show_stock_on_button' => $setting->show_stock_on_button,
                 'show_product_image' => $setting->show_product_image,
                 'payment_quick_amounts' => $setting->payment_quick_amounts,
+                'mobile_print_receipt' => $setting->mobile_print_receipt,
             ]]);
     }
 

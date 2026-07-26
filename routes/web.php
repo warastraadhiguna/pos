@@ -86,6 +86,7 @@ Route::middleware(['auth', 'verified', 'permission:company-settings.manage'])->p
     Route::put('/identitas-toko', [SettingController::class, 'updateStoreIdentity'])->name('identitas-toko.update');
     Route::put('/struk', [SettingController::class, 'updateReceiptFooter'])->name('struk.update');
     Route::put('/nominal-bayar', [SettingController::class, 'updatePaymentQuickAmounts'])->name('nominal-bayar.update');
+    Route::put('/cetak-struk-mobile', [SettingController::class, 'updateMobilePrintReceipt'])->name('cetak-struk-mobile.update');
 });
 
 Route::middleware(['auth', 'verified', 'permission:master-data.manage'])->prefix('master')->name('master.')->group(function () {
