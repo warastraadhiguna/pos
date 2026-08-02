@@ -7,6 +7,7 @@ use App\Models\CompanySetting;
 use App\Models\Item;
 use App\Models\Product;
 use App\Models\ProductComponent;
+use App\Models\ProductVariation;
 use App\Models\TaxRate;
 use App\Models\Uom;
 use App\Models\User;
@@ -66,6 +67,36 @@ class ProductControllerTest extends TestCase
         $response->assertJsonPath('data.0.components.0.qty', '2.0000');
         $response->assertJsonPath('data.0.components.0.uom.code', 'PCS');
         $response->assertJsonStructure(['meta' => ['synced_at']]);
+    }
+
+    /**
+     * Variasi Berbayar (Tahap 1) ikut sync bareng produk (bukan endpoint
+     * terpisah), pola identik `components` -- termasuk variasi NONAKTIF,
+     * sama seperti is_active produk itu sendiri (client yang menyaring).
+     */
+    public function test_returns_products_with_variations(): void
+    {
+        Sanctum::actingAs(User::factory()->create(), ['*']);
+
+        $product = Product::create(['name' => 'Es Teh', 'sell_price' => 5000, 'is_active' => true]);
+        ProductVariation::create(['product_id' => $product->id, 'name' => 'Gelas Besar', 'additional_price' => 2000]);
+        ProductVariation::create([
+            'product_id' => $product->id,
+            'name' => 'Nonaktif',
+            'additional_price' => 1000,
+            'is_active' => false,
+        ]);
+
+        $response = $this->getJson('/api/v1/products');
+
+        $response->assertOk();
+        $variations = collect($response->json('data.0.variations'));
+        $this->assertCount(2, $variations);
+        $active = $variations->firstWhere('name', 'Gelas Besar');
+        $this->assertSame('2000.0000', $active['additional_price']);
+        $this->assertTrue($active['is_active']);
+        $inactive = $variations->firstWhere('name', 'Nonaktif');
+        $this->assertFalse($inactive['is_active']);
     }
 
     public function test_includes_inactive_products_so_the_client_can_deactivate_them_locally(): void
@@ -150,6 +181,8 @@ class ProductControllerTest extends TestCase
             'show_product_image' => true,
             'payment_quick_amounts' => [2000, 15000],
             'mobile_print_receipt' => false,
+            'member_enabled' => true,
+            'table_enabled' => true,
         ]);
 
         $response = $this->getJson('/api/v1/products');
@@ -163,6 +196,8 @@ class ProductControllerTest extends TestCase
         $response->assertJsonPath('meta.show_product_image', true);
         $response->assertJsonPath('meta.payment_quick_amounts', [2000, 15000]);
         $response->assertJsonPath('meta.mobile_print_receipt', false);
+        $response->assertJsonPath('meta.member_enabled', true);
+        $response->assertJsonPath('meta.table_enabled', true);
     }
 
     public function test_meta_defaults_receipt_footer_and_store_fields(): void
@@ -178,6 +213,35 @@ class ProductControllerTest extends TestCase
         $response->assertJsonPath('meta.show_product_image', false);
         $response->assertJsonPath('meta.payment_quick_amounts', [5000, 10000, 20000, 50000, 100000]);
         $response->assertJsonPath('meta.mobile_print_receipt', true);
+        // Fitur baru — default false, sama disiplinnya dengan mobile_print_receipt:
+        // tidak boleh tiba-tiba aktif di toko manapun tanpa admin sadar mengaktifkannya.
+        $response->assertJsonPath('meta.member_enabled', false);
+        $response->assertJsonPath('meta.table_enabled', false);
+        $response->assertJsonPath('meta.note_enabled', false);
+        $response->assertJsonPath('meta.variation_enabled', false);
+        $response->assertJsonPath('meta.draft_enabled', false);
+    }
+
+    public function test_meta_reflects_variation_enabled_turned_on_by_admin(): void
+    {
+        Sanctum::actingAs(User::factory()->create(), ['*']);
+        CompanySetting::current()->update(['variation_enabled' => true]);
+
+        $response = $this->getJson('/api/v1/products');
+
+        $response->assertOk();
+        $response->assertJsonPath('meta.variation_enabled', true);
+    }
+
+    public function test_meta_reflects_draft_enabled_turned_on_by_admin(): void
+    {
+        Sanctum::actingAs(User::factory()->create(), ['*']);
+        CompanySetting::current()->update(['draft_enabled' => true]);
+
+        $response = $this->getJson('/api/v1/products');
+
+        $response->assertOk();
+        $response->assertJsonPath('meta.draft_enabled', true);
     }
 
     public function test_includes_image_url_and_hash_when_product_has_an_image(): void

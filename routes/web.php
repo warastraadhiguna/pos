@@ -15,9 +15,12 @@ use App\Http\Controllers\Kasir\SaleController as KasirSaleController;
 use App\Http\Controllers\Kasir\SaleHistoryController;
 use App\Http\Controllers\Master\ItemCategoryController;
 use App\Http\Controllers\Master\ItemController;
+use App\Http\Controllers\Master\MemberController;
+use App\Http\Controllers\Master\NoteTemplateController;
 use App\Http\Controllers\Master\ProductCategoryController;
 use App\Http\Controllers\Master\ProductController;
 use App\Http\Controllers\Master\SupplierController;
+use App\Http\Controllers\Master\TableController;
 use App\Http\Controllers\Master\UomController;
 use App\Http\Controllers\FinancialReportController;
 use App\Http\Controllers\InventoryReportController;
@@ -87,6 +90,11 @@ Route::middleware(['auth', 'verified', 'permission:company-settings.manage'])->p
     Route::put('/struk', [SettingController::class, 'updateReceiptFooter'])->name('struk.update');
     Route::put('/nominal-bayar', [SettingController::class, 'updatePaymentQuickAmounts'])->name('nominal-bayar.update');
     Route::put('/cetak-struk-mobile', [SettingController::class, 'updateMobilePrintReceipt'])->name('cetak-struk-mobile.update');
+    Route::put('/member', [SettingController::class, 'updateMemberEnabled'])->name('member.update');
+    Route::put('/meja', [SettingController::class, 'updateTableEnabled'])->name('meja.update');
+    Route::put('/catatan', [SettingController::class, 'updateNoteEnabled'])->name('catatan.update');
+    Route::put('/variasi', [SettingController::class, 'updateVariationEnabled'])->name('variasi.update');
+    Route::put('/draft', [SettingController::class, 'updateDraftEnabled'])->name('draft.update');
 });
 
 Route::middleware(['auth', 'verified', 'permission:master-data.manage'])->prefix('master')->name('master.')->group(function () {
@@ -99,6 +107,10 @@ Route::middleware(['auth', 'verified', 'permission:master-data.manage'])->prefix
     Route::resource('products', ProductController::class)->except(['show']);
     Route::resource('product-categories', ProductCategoryController::class)->except(['show']);
     Route::resource('item-categories', ItemCategoryController::class)->except(['show']);
+    Route::get('members/search', [MemberController::class, 'search'])->name('members.search');
+    Route::resource('members', MemberController::class)->except(['show']);
+    Route::resource('tables', TableController::class)->except(['show']);
+    Route::resource('note-templates', NoteTemplateController::class)->except(['show']);
 });
 
 Route::middleware(['auth', 'verified', 'permission:pembelian.manage'])->prefix('pembelian')->name('pembelian.')->group(function () {

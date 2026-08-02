@@ -3,10 +3,13 @@
 namespace Tests\Feature\Api;
 
 use App\Models\Account;
+use App\Models\DiningTable;
 use App\Models\Item;
+use App\Models\Member;
 use App\Models\Outlet;
 use App\Models\Product;
 use App\Models\ProductComponent;
+use App\Models\ProductVariation;
 use App\Models\Sale;
 use App\Models\User;
 use App\Models\Uom;
@@ -629,6 +632,272 @@ class SaleControllerTest extends TestCase
         ]);
 
         $response->assertStatus(409);
+        $this->assertSame(0, Sale::count());
+    }
+
+    /**
+     * Kasus offline mobile: member_name dikirim eksplisit (nama pada momen
+     * dipilih/diketik sesungguhnya, sebelum sync) -- harus dipercaya apa
+     * adanya, bukan ditimpa oleh lookup nama Member saat ini di server.
+     */
+    public function test_posting_a_sale_with_member_id_and_client_supplied_member_name_stores_it_verbatim(): void
+    {
+        [, $product] = $this->makeWidgetProduct();
+        $member = Member::create(['name' => 'Nama Sekarang Di Server']);
+
+        $response = $this->postJson('/api/v1/sales', [
+            'local_uuid' => (string) Str::uuid(),
+            'date' => '2026-07-04',
+            'cash_received' => 10000,
+            'change_amount' => 0,
+            'member_id' => $member->id,
+            'member_name' => 'Nama Saat Transaksi Offline',
+            'lines' => [
+                ['product_id' => $product->id, 'qty' => 2, 'unit_price' => 5000],
+            ],
+        ]);
+
+        $response->assertCreated();
+        $response->assertJsonPath('data.member_id', $member->id);
+        $response->assertJsonPath('data.member_name_snapshot', 'Nama Saat Transaksi Offline');
+
+        $member->update(['name' => 'Nama Berubah Setelah Sync']);
+        $sale = Sale::firstOrFail();
+        $this->assertSame('Nama Saat Transaksi Offline', $sale->fresh()->member_name_snapshot);
+    }
+
+    public function test_posting_a_sale_with_a_free_typed_member_name_and_no_member_id_succeeds(): void
+    {
+        [, $product] = $this->makeWidgetProduct();
+
+        $response = $this->postJson('/api/v1/sales', [
+            'local_uuid' => (string) Str::uuid(),
+            'date' => '2026-07-04',
+            'cash_received' => 10000,
+            'change_amount' => 0,
+            'member_name' => 'Pelanggan Walk-in',
+            'lines' => [
+                ['product_id' => $product->id, 'qty' => 2, 'unit_price' => 5000],
+            ],
+        ]);
+
+        $response->assertCreated();
+        $response->assertJsonPath('data.member_id', null);
+        $response->assertJsonPath('data.member_name_snapshot', 'Pelanggan Walk-in');
+    }
+
+    public function test_posting_a_sale_without_any_member_data_leaves_member_fields_null(): void
+    {
+        [, $product] = $this->makeWidgetProduct();
+
+        $response = $this->postJson('/api/v1/sales', [
+            'local_uuid' => (string) Str::uuid(),
+            'date' => '2026-07-04',
+            'cash_received' => 10000,
+            'change_amount' => 0,
+            'lines' => [
+                ['product_id' => $product->id, 'qty' => 2, 'unit_price' => 5000],
+            ],
+        ]);
+
+        $response->assertCreated();
+        $response->assertJsonPath('data.member_id', null);
+        $response->assertJsonPath('data.member_name_snapshot', null);
+    }
+
+    public function test_posting_a_sale_with_a_nonexistent_member_id_is_rejected_with_a_422(): void
+    {
+        [, $product] = $this->makeWidgetProduct();
+
+        $response = $this->postJson('/api/v1/sales', [
+            'local_uuid' => (string) Str::uuid(),
+            'date' => '2026-07-04',
+            'cash_received' => 10000,
+            'change_amount' => 0,
+            'member_id' => 99999,
+            'lines' => [
+                ['product_id' => $product->id, 'qty' => 2, 'unit_price' => 5000],
+            ],
+        ]);
+
+        $response->assertStatus(422);
+        $this->assertSame(0, Sale::count());
+    }
+
+    /**
+     * Kasus offline mobile: table_name dikirim eksplisit (nama pada momen
+     * dipilih/diketik sesungguhnya, sebelum sync) -- harus dipercaya apa
+     * adanya, bukan ditimpa oleh lookup nama meja saat ini di server.
+     */
+    public function test_posting_a_sale_with_table_id_and_client_supplied_table_name_stores_it_verbatim(): void
+    {
+        [, $product] = $this->makeWidgetProduct();
+        $table = DiningTable::create(['name' => 'Nama Sekarang Di Server']);
+
+        $response = $this->postJson('/api/v1/sales', [
+            'local_uuid' => (string) Str::uuid(),
+            'date' => '2026-07-04',
+            'cash_received' => 10000,
+            'change_amount' => 0,
+            'table_id' => $table->id,
+            'table_name' => 'Nama Saat Transaksi Offline',
+            'lines' => [
+                ['product_id' => $product->id, 'qty' => 2, 'unit_price' => 5000],
+            ],
+        ]);
+
+        $response->assertCreated();
+        $response->assertJsonPath('data.table_id', $table->id);
+        $response->assertJsonPath('data.table_name_snapshot', 'Nama Saat Transaksi Offline');
+
+        $table->update(['name' => 'Nama Berubah Setelah Sync']);
+        $sale = Sale::firstOrFail();
+        $this->assertSame('Nama Saat Transaksi Offline', $sale->fresh()->table_name_snapshot);
+    }
+
+    public function test_posting_a_sale_with_a_free_typed_table_name_and_no_table_id_succeeds(): void
+    {
+        [, $product] = $this->makeWidgetProduct();
+
+        $response = $this->postJson('/api/v1/sales', [
+            'local_uuid' => (string) Str::uuid(),
+            'date' => '2026-07-04',
+            'cash_received' => 10000,
+            'change_amount' => 0,
+            'table_name' => 'Meja Tambahan Di Luar',
+            'lines' => [
+                ['product_id' => $product->id, 'qty' => 2, 'unit_price' => 5000],
+            ],
+        ]);
+
+        $response->assertCreated();
+        $response->assertJsonPath('data.table_id', null);
+        $response->assertJsonPath('data.table_name_snapshot', 'Meja Tambahan Di Luar');
+    }
+
+    public function test_posting_a_sale_without_any_table_data_leaves_table_fields_null(): void
+    {
+        [, $product] = $this->makeWidgetProduct();
+
+        $response = $this->postJson('/api/v1/sales', [
+            'local_uuid' => (string) Str::uuid(),
+            'date' => '2026-07-04',
+            'cash_received' => 10000,
+            'change_amount' => 0,
+            'lines' => [
+                ['product_id' => $product->id, 'qty' => 2, 'unit_price' => 5000],
+            ],
+        ]);
+
+        $response->assertCreated();
+        $response->assertJsonPath('data.table_id', null);
+        $response->assertJsonPath('data.table_name_snapshot', null);
+    }
+
+    public function test_posting_a_sale_with_a_nonexistent_table_id_is_rejected_with_a_422(): void
+    {
+        [, $product] = $this->makeWidgetProduct();
+
+        $response = $this->postJson('/api/v1/sales', [
+            'local_uuid' => (string) Str::uuid(),
+            'date' => '2026-07-04',
+            'cash_received' => 10000,
+            'change_amount' => 0,
+            'table_id' => 99999,
+            'lines' => [
+                ['product_id' => $product->id, 'qty' => 2, 'unit_price' => 5000],
+            ],
+        ]);
+
+        $response->assertStatus(422);
+        $this->assertSame(0, Sale::count());
+    }
+
+    public function test_posting_a_sale_with_notes_stores_them_on_sale_and_line(): void
+    {
+        [, $product] = $this->makeWidgetProduct();
+
+        $response = $this->postJson('/api/v1/sales', [
+            'local_uuid' => (string) Str::uuid(),
+            'date' => '2026-07-04',
+            'cash_received' => 10000,
+            'change_amount' => 0,
+            'note' => 'Antar ke meja 5',
+            'lines' => [
+                ['product_id' => $product->id, 'qty' => 2, 'unit_price' => 5000, 'note' => 'Es sedikit'],
+            ],
+        ]);
+
+        $response->assertCreated();
+        $response->assertJsonPath('data.note', 'Antar ke meja 5');
+        $response->assertJsonPath('data.lines.0.note', 'Es sedikit');
+    }
+
+    public function test_posting_a_sale_without_any_notes_leaves_note_fields_null(): void
+    {
+        [, $product] = $this->makeWidgetProduct();
+
+        $response = $this->postJson('/api/v1/sales', [
+            'local_uuid' => (string) Str::uuid(),
+            'date' => '2026-07-04',
+            'cash_received' => 10000,
+            'change_amount' => 0,
+            'lines' => [
+                ['product_id' => $product->id, 'qty' => 2, 'unit_price' => 5000],
+            ],
+        ]);
+
+        $response->assertCreated();
+        $response->assertJsonPath('data.note', null);
+        $response->assertJsonPath('data.lines.0.note', null);
+    }
+
+    public function test_posting_a_sale_with_variations_stores_snapshots(): void
+    {
+        [, $product] = $this->makeWidgetProduct();
+        $variation = ProductVariation::create(['product_id' => $product->id, 'name' => 'Gelas Besar', 'additional_price' => 2000]);
+
+        $response = $this->postJson('/api/v1/sales', [
+            'local_uuid' => (string) Str::uuid(),
+            'date' => '2026-07-04',
+            'cash_received' => 7000,
+            'change_amount' => 0,
+            'lines' => [[
+                'product_id' => $product->id,
+                'qty' => 1,
+                // Mobile yang menghitung ini -- 5000 + 2000, lihat docblock
+                // SaleService::createSale().
+                'unit_price' => 7000,
+                'variations' => [['variation_id' => $variation->id]],
+            ]],
+        ]);
+
+        $response->assertCreated();
+        $response->assertJsonPath('data.lines.0.line_total', '7000.0000');
+        $response->assertJsonPath('data.lines.0.variations.0.name_snapshot', 'Gelas Besar');
+        $response->assertJsonPath('data.lines.0.variations.0.price_snapshot', '2000.0000');
+    }
+
+    public function test_posting_a_sale_with_a_variation_not_belonging_to_the_line_product_is_rejected_with_a_422(): void
+    {
+        [, $product] = $this->makeWidgetProduct();
+        $otherProduct = Product::create(['name' => 'Produk Lain', 'sell_price' => 8000]);
+        $wrongVariation = ProductVariation::create(['product_id' => $otherProduct->id, 'name' => 'Extra Shot', 'additional_price' => 3000]);
+
+        $response = $this->postJson('/api/v1/sales', [
+            'local_uuid' => (string) Str::uuid(),
+            'date' => '2026-07-04',
+            'cash_received' => 5000,
+            'change_amount' => 0,
+            'lines' => [[
+                'product_id' => $product->id,
+                'qty' => 1,
+                'unit_price' => 5000,
+                'variations' => [['variation_id' => $wrongVariation->id]],
+            ]],
+        ]);
+
+        $response->assertStatus(422);
         $this->assertSame(0, Sale::count());
     }
 

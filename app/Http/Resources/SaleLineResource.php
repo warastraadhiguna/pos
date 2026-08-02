@@ -15,6 +15,8 @@ class SaleLineResource extends JsonResource
             'qty' => $this->qty,
             'unit_price' => $this->unit_price,
             'line_total' => $this->line_total,
+            'note' => $this->note,
+            'variations' => SaleLineVariationResource::collection($this->whenLoaded('variations')),
         ];
     }
 }

@@ -3,8 +3,11 @@
 namespace Tests\Feature\Kasir;
 
 use App\Models\CompanySetting;
+use App\Models\DiningTable;
+use App\Models\Member;
 use App\Models\Permission;
 use App\Models\Product;
+use App\Models\ProductVariation;
 use App\Models\Role;
 use App\Models\Sale;
 use App\Models\User;
@@ -207,6 +210,262 @@ class SaleControllerTest extends TestCase
 
         $sale = Sale::firstOrFail();
         $this->assertSame('Nama Titipan Klien', $sale->lines->first()->product_name);
+    }
+
+    public function test_checkout_with_a_picked_member_stores_member_id_and_snapshot(): void
+    {
+        $this->actingAsKasir();
+        $product = Product::create(['name' => 'Kopi', 'sell_price' => 10000]);
+        $member = Member::create(['name' => 'Budi Santoso']);
+
+        $this->post('/kasir', [
+            'payment_method' => 'cash',
+            'cash_received' => 10000,
+            'change_amount' => 0,
+            'member_id' => $member->id,
+            'lines' => [
+                ['product_id' => $product->id, 'qty' => 1, 'unit_price' => 10000],
+            ],
+        ]);
+
+        $sale = Sale::firstOrFail();
+        $this->assertSame($member->id, $sale->member_id);
+        $this->assertSame('Budi Santoso', $sale->member_name_snapshot);
+    }
+
+    /**
+     * Pelanggan walk-in: nama diketik bebas tanpa memilih dari
+     * MemberCombobox -- valid, tidak boleh direject sebagai error.
+     */
+    public function test_checkout_with_a_free_typed_member_name_and_no_member_id_succeeds(): void
+    {
+        $this->actingAsKasir();
+        $product = Product::create(['name' => 'Kopi', 'sell_price' => 10000]);
+
+        $this->post('/kasir', [
+            'payment_method' => 'cash',
+            'cash_received' => 10000,
+            'change_amount' => 0,
+            'member_name' => 'Pelanggan Walk-in',
+            'lines' => [
+                ['product_id' => $product->id, 'qty' => 1, 'unit_price' => 10000],
+            ],
+        ])->assertRedirect(route('kasir.index'));
+
+        $sale = Sale::firstOrFail();
+        $this->assertNull($sale->member_id);
+        $this->assertSame('Pelanggan Walk-in', $sale->member_name_snapshot);
+    }
+
+    public function test_checkout_with_a_nonexistent_member_id_is_rejected(): void
+    {
+        $this->actingAsKasir();
+        $product = Product::create(['name' => 'Kopi', 'sell_price' => 10000]);
+
+        $response = $this->post('/kasir', [
+            'payment_method' => 'cash',
+            'cash_received' => 10000,
+            'change_amount' => 0,
+            'member_id' => 99999,
+            'lines' => [
+                ['product_id' => $product->id, 'qty' => 1, 'unit_price' => 10000],
+            ],
+        ]);
+
+        $response->assertSessionHasErrors(['member_id']);
+        $this->assertSame(0, Sale::count());
+    }
+
+    public function test_checkout_without_any_member_data_leaves_member_fields_null(): void
+    {
+        $this->actingAsKasir();
+        $product = Product::create(['name' => 'Kopi', 'sell_price' => 10000]);
+
+        $this->post('/kasir', [
+            'payment_method' => 'cash',
+            'cash_received' => 10000,
+            'change_amount' => 0,
+            'lines' => [
+                ['product_id' => $product->id, 'qty' => 1, 'unit_price' => 10000],
+            ],
+        ]);
+
+        $sale = Sale::firstOrFail();
+        $this->assertNull($sale->member_id);
+        $this->assertNull($sale->member_name_snapshot);
+    }
+
+    public function test_checkout_with_a_picked_table_stores_table_id_and_snapshot(): void
+    {
+        $this->actingAsKasir();
+        $product = Product::create(['name' => 'Kopi', 'sell_price' => 10000]);
+        $table = DiningTable::create(['name' => 'Meja 3']);
+
+        $this->post('/kasir', [
+            'payment_method' => 'cash',
+            'cash_received' => 10000,
+            'change_amount' => 0,
+            'table_id' => $table->id,
+            'lines' => [
+                ['product_id' => $product->id, 'qty' => 1, 'unit_price' => 10000],
+            ],
+        ]);
+
+        $sale = Sale::firstOrFail();
+        $this->assertSame($table->id, $sale->table_id);
+        $this->assertSame('Meja 3', $sale->table_name_snapshot);
+    }
+
+    /**
+     * Meja belum terdaftar: nomor diketik bebas tanpa memilih dari
+     * TableCombobox -- valid, tidak boleh direject sebagai error.
+     */
+    public function test_checkout_with_a_free_typed_table_name_and_no_table_id_succeeds(): void
+    {
+        $this->actingAsKasir();
+        $product = Product::create(['name' => 'Kopi', 'sell_price' => 10000]);
+
+        $this->post('/kasir', [
+            'payment_method' => 'cash',
+            'cash_received' => 10000,
+            'change_amount' => 0,
+            'table_name' => 'Meja Tambahan Di Luar',
+            'lines' => [
+                ['product_id' => $product->id, 'qty' => 1, 'unit_price' => 10000],
+            ],
+        ])->assertRedirect(route('kasir.index'));
+
+        $sale = Sale::firstOrFail();
+        $this->assertNull($sale->table_id);
+        $this->assertSame('Meja Tambahan Di Luar', $sale->table_name_snapshot);
+    }
+
+    public function test_checkout_with_a_nonexistent_table_id_is_rejected(): void
+    {
+        $this->actingAsKasir();
+        $product = Product::create(['name' => 'Kopi', 'sell_price' => 10000]);
+
+        $response = $this->post('/kasir', [
+            'payment_method' => 'cash',
+            'cash_received' => 10000,
+            'change_amount' => 0,
+            'table_id' => 99999,
+            'lines' => [
+                ['product_id' => $product->id, 'qty' => 1, 'unit_price' => 10000],
+            ],
+        ]);
+
+        $response->assertSessionHasErrors(['table_id']);
+        $this->assertSame(0, Sale::count());
+    }
+
+    public function test_checkout_without_any_table_data_leaves_table_fields_null(): void
+    {
+        $this->actingAsKasir();
+        $product = Product::create(['name' => 'Kopi', 'sell_price' => 10000]);
+
+        $this->post('/kasir', [
+            'payment_method' => 'cash',
+            'cash_received' => 10000,
+            'change_amount' => 0,
+            'lines' => [
+                ['product_id' => $product->id, 'qty' => 1, 'unit_price' => 10000],
+            ],
+        ]);
+
+        $sale = Sale::firstOrFail();
+        $this->assertNull($sale->table_id);
+        $this->assertNull($sale->table_name_snapshot);
+    }
+
+    public function test_checkout_with_notes_stores_them_on_sale_and_line(): void
+    {
+        $this->actingAsKasir();
+        $product = Product::create(['name' => 'Es Teh', 'sell_price' => 5000]);
+
+        $this->post('/kasir', [
+            'payment_method' => 'cash',
+            'cash_received' => 5000,
+            'change_amount' => 0,
+            'note' => 'Antar ke meja 5',
+            'lines' => [
+                ['product_id' => $product->id, 'qty' => 1, 'unit_price' => 5000, 'note' => 'Es sedikit'],
+            ],
+        ])->assertRedirect(route('kasir.index'));
+
+        $sale = Sale::firstOrFail();
+        $this->assertSame('Antar ke meja 5', $sale->note);
+        $this->assertSame('Es sedikit', $sale->lines->first()->note);
+    }
+
+    public function test_checkout_without_any_notes_leaves_note_fields_null(): void
+    {
+        $this->actingAsKasir();
+        $product = Product::create(['name' => 'Kopi', 'sell_price' => 10000]);
+
+        $this->post('/kasir', [
+            'payment_method' => 'cash',
+            'cash_received' => 10000,
+            'change_amount' => 0,
+            'lines' => [
+                ['product_id' => $product->id, 'qty' => 1, 'unit_price' => 10000],
+            ],
+        ]);
+
+        $sale = Sale::firstOrFail();
+        $this->assertNull($sale->note);
+        $this->assertNull($sale->lines->first()->note);
+    }
+
+    public function test_checkout_with_variations_stores_snapshots_and_unit_price_already_includes_them(): void
+    {
+        $this->actingAsKasir();
+        $product = Product::create(['name' => 'Es Teh', 'sell_price' => 5000]);
+        $variation = ProductVariation::create(['product_id' => $product->id, 'name' => 'Gelas Besar', 'additional_price' => 2000]);
+
+        $this->post('/kasir', [
+            'payment_method' => 'cash',
+            'cash_received' => 7000,
+            'change_amount' => 0,
+            'lines' => [[
+                'product_id' => $product->id,
+                'qty' => 1,
+                // Klien (Kasir/Index.jsx) yang menghitung ini -- 5000 + 2000.
+                'unit_price' => 7000,
+                'variations' => [['variation_id' => $variation->id]],
+            ]],
+        ])->assertRedirect(route('kasir.index'));
+
+        $sale = Sale::firstOrFail();
+        $line = $sale->lines->first();
+        $this->assertSame(0, bccomp($line->line_total, '7000', 4));
+        $snapshot = $line->variations()->firstOrFail();
+        $this->assertSame('Gelas Besar', $snapshot->name_snapshot);
+        $this->assertSame(0, bccomp($snapshot->price_snapshot, '2000', 4));
+    }
+
+    public function test_checkout_with_a_variation_not_belonging_to_the_line_product_is_rejected(): void
+    {
+        $this->actingAsKasir();
+        $product = Product::create(['name' => 'Es Teh', 'sell_price' => 5000]);
+        $otherProduct = Product::create(['name' => 'Kopi', 'sell_price' => 8000]);
+        $wrongVariation = ProductVariation::create(['product_id' => $otherProduct->id, 'name' => 'Extra Shot', 'additional_price' => 3000]);
+
+        $response = $this->post('/kasir', [
+            'payment_method' => 'cash',
+            'cash_received' => 8000,
+            'change_amount' => 0,
+            'lines' => [[
+                'product_id' => $product->id,
+                'qty' => 1,
+                'unit_price' => 8000,
+                'variations' => [['variation_id' => $wrongVariation->id]],
+            ]],
+        ]);
+
+        $response->assertRedirect(route('kasir.index'));
+        $response->assertSessionHas('error');
+        $this->assertSame(0, Sale::count());
     }
 
     public function test_checkout_with_bank_selected_stores_the_bank_code(): void

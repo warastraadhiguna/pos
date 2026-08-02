@@ -3,10 +3,13 @@
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\DashboardController;
 use App\Http\Controllers\Api\ItemController;
+use App\Http\Controllers\Api\MemberController;
+use App\Http\Controllers\Api\NoteTemplateController;
 use App\Http\Controllers\Api\ProductCategoryController;
 use App\Http\Controllers\Api\ProductController;
 use App\Http\Controllers\Api\SaleController;
 use App\Http\Controllers\Api\SalesReportController;
+use App\Http\Controllers\Api\TableController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
@@ -35,6 +38,9 @@ Route::prefix('v1')->group(function () {
             Route::get('/product-categories', [ProductCategoryController::class, 'index']);
             Route::get('/items', [ItemController::class, 'index']);
             Route::get('/items/stock', [ItemController::class, 'stock']);
+            Route::get('/members', [MemberController::class, 'index']);
+            Route::get('/tables', [TableController::class, 'index']);
+            Route::get('/note-templates', [NoteTemplateController::class, 'index']);
         });
 
         Route::post('/sales', [SaleController::class, 'store'])

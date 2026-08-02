@@ -81,6 +81,11 @@ class Product extends Model
         return $this->hasMany(ProductComponent::class);
     }
 
+    public function variations(): HasMany
+    {
+        return $this->hasMany(ProductVariation::class);
+    }
+
     public function saleLines(): HasMany
     {
         return $this->hasMany(SaleLine::class);

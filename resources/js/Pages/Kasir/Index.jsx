@@ -1,10 +1,12 @@
 import InputLabel from '@/Components/InputLabel';
+import MemberCombobox from '@/Components/MemberCombobox';
 import NumberInput from '@/Components/NumberInput';
 import PrimaryButton from '@/Components/PrimaryButton';
 import ProductImage from '@/Components/ProductImage';
 import SecondaryButton from '@/Components/SecondaryButton';
 import SelectInput from '@/Components/SelectInput';
 import TextInput from '@/Components/TextInput';
+import VariationPickerModal from '@/Components/VariationPickerModal';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import { Head, Link, router, usePage } from '@inertiajs/react';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -20,12 +22,40 @@ export default function Index({
     showProductImage,
     paymentQuickAmounts,
     cashAccounts,
+    memberEnabled,
+    tableEnabled,
+    tables,
+    noteEnabled,
+    noteTemplates,
+    variationEnabled,
 }) {
     const [cart, setCart] = useState([]);
     const [search, setSearch] = useState('');
     const [processing, setProcessing] = useState(false);
     const [barcodeInput, setBarcodeInput] = useState('');
     const [scanError, setScanError] = useState('');
+    // memberId nonaktif (null) setiap kali nama diketik ulang manual setelah
+    // memilih dari daftar -- teksnya sendiri tetap dipakai sebagai nama
+    // pelanggan bebas, lihat MemberCombobox.
+    const [memberName, setMemberName] = useState('');
+    const [memberId, setMemberId] = useState(null);
+    // Meja dipilih dari daftar SAJA (bukan ketik bebas seperti Pelanggan)
+    // -- jumlah meja tetap/terbatas, jadi tidak ada risiko "salah ketik"
+    // yang perlu diakomodasi lewat teks bebas. '' berarti "tanpa meja".
+    const [tableId, setTableId] = useState('');
+    // Catatan per-transaksi -- ketik bebas ATAU tap chip template (chip
+    // MENGISI field, tidak mengunci; kasir masih bisa mengedit setelahnya).
+    const [transactionNote, setTransactionNote] = useState('');
+    // `key` baris keranjang (BUKAN product_id lagi -- lihat computeLineKey)
+    // yang editor catatannya sedang terbuka -- hanya SATU baris sekaligus
+    // (bukan Set) supaya tampilan keranjang yang sudah padat tidak
+    // sekaligus melebar untuk banyak baris.
+    const [openNoteFor, setOpenNoteFor] = useState(null);
+    // Modal pemilih variasi -- null berarti tertutup. `editingLineKey` null
+    // berarti sedang MENAMBAH item baru (tap tombol produk); terisi berarti
+    // sedang MENGEDIT variasi baris keranjang yang sudah ada (lihat
+    // openVariationEditor()).
+    const [variationPicker, setVariationPicker] = useState(null);
     // String desimal biasa ("plain", bukan tampilan berformat) -- ini yang
     // dikirim NumberInput lewat onChange, siap dipakai langsung sebagai
     // cash_received saat checkout tanpa parsing pemisah ribuan lagi.
@@ -65,6 +95,11 @@ export default function Index({
         return products.filter((p) => p.name.toLowerCase().includes(term));
     }, [products, searchTerm, awaitingSearch]);
 
+    const productsById = useMemo(
+        () => new Map(products.map((p) => [p.id, p])),
+        [products],
+    );
+
     // Fokus otomatis ke kolom barcode saat halaman dibuka, supaya scanner
     // (yang berperilaku seperti keyboard) bisa langsung dipakai tanpa kasir
     // harus klik apa pun dulu.
@@ -91,14 +126,33 @@ export default function Index({
         barcodeRef.current?.focus();
     };
 
-    const addToCart = (product) => {
+    // Harga baris = harga produk + jumlah additional_price tiap variasi
+    // TERCENTANG -- satu-satunya tempat rumus ini hidup di sisi klien,
+    // dipakai baik saat menambah item baru maupun mengedit variasi item
+    // yang sudah ada di keranjang (lihat handleVariationConfirm).
+    const computeUnitPrice = (product, variations) =>
+        Number(product.sell_price) +
+        variations.reduce((sum, v) => sum + Number(v.additional_price), 0);
+
+    // Kunci identitas baris keranjang = produk + kombinasi variasi
+    // terpilih (terurut, supaya "Besar+Panas" dan "Panas+Besar" dianggap
+    // baris yang SAMA). BEDA dari sebelum fitur ini ada (kunci = product_id
+    // saja): "Es Teh + Gelas Besar" dan "Es Teh + Gelas Kecil" sekarang
+    // harus jadi DUA baris terpisah, sementara "Es Teh + Gelas Besar" yang
+    // ditambah dua kali tetap satu baris (qty bertambah).
+    const computeLineKey = (productId, variationIds) =>
+        `${productId}:${[...variationIds].sort((a, b) => a - b).join(',')}`;
+
+    const addToCartWithVariations = (product, variations) => {
+        const key = computeLineKey(
+            product.id,
+            variations.map((v) => v.id),
+        );
         setCart((prev) => {
-            const existing = prev.find(
-                (line) => line.product_id === product.id,
-            );
+            const existing = prev.find((line) => line.key === key);
             if (existing) {
                 return prev.map((line) =>
-                    line.product_id === product.id
+                    line.key === key
                         ? { ...line, qty: line.qty + 1 }
                         : line,
                 );
@@ -106,35 +160,108 @@ export default function Index({
             return [
                 ...prev,
                 {
+                    key,
                     product_id: product.id,
                     name: product.name,
                     qty: 1,
-                    unit_price: Number(product.sell_price),
+                    unit_price: computeUnitPrice(product, variations),
                     tax_rate: product.tax_rate
                         ? Number(product.tax_rate.rate)
                         : 0,
+                    note: '',
+                    variations,
                 },
             ];
         });
     };
 
-    const updateQty = (productId, qty) => {
+    // Gerbang utama: produk TANPA variasi aktif (atau fitur mati) langsung
+    // masuk keranjang -- NOL perubahan kecepatan dari sebelum fitur ini
+    // ada. Dialog variasi HANYA muncul untuk produk yang benar-benar punya
+    // variasi aktif & fitur menyala. Dipanggil dari tombol grid MAUPUN
+    // scanBarcode() -- keduanya lewat jalur yang sama, konsisten terlepas
+    // dari cara produk ditemukan.
+    const addToCart = (product) => {
+        const activeVariations = (product.variations ?? []).filter(
+            (v) => v.is_active,
+        );
+        if (variationEnabled && activeVariations.length > 0) {
+            setVariationPicker({
+                product,
+                editingLineKey: null,
+                initialSelectedIds: [],
+            });
+            return;
+        }
+        addToCartWithVariations(product, []);
+    };
+
+    // Tap area variasi pada baris keranjang yang sudah ada -- membuka ulang
+    // modal yang SAMA, pre-filled dari pilihan saat ini (pola identik
+    // editor catatan per-item: tap untuk mengedit, bukan hapus-tambah ulang).
+    const openVariationEditor = (line) => {
+        const product = productsById.get(line.product_id);
+        if (!product) return;
+        setVariationPicker({
+            product,
+            editingLineKey: line.key,
+            initialSelectedIds: line.variations.map((v) => v.id),
+        });
+    };
+
+    const handleVariationConfirm = (selectedVariations) => {
+        if (!variationPicker) return;
+        const { product, editingLineKey } = variationPicker;
+
+        if (editingLineKey === null) {
+            addToCartWithVariations(product, selectedVariations);
+        } else {
+            // Edit di tempat -- kunci baris ikut berubah kalau kombinasi
+            // variasinya berubah, TAPI tidak digabung ke baris lain yang
+            // kebetulan sudah punya kombinasi sama (sengaja sederhana,
+            // sama seperti editor catatan tidak menggabung baris).
+            setCart((prev) =>
+                prev.map((line) => {
+                    if (line.key !== editingLineKey) return line;
+                    return {
+                        ...line,
+                        key: computeLineKey(
+                            line.product_id,
+                            selectedVariations.map((v) => v.id),
+                        ),
+                        variations: selectedVariations,
+                        unit_price: computeUnitPrice(
+                            product,
+                            selectedVariations,
+                        ),
+                    };
+                }),
+            );
+        }
+        setVariationPicker(null);
+    };
+
+    const updateNote = (lineKey, note) => {
+        setCart((prev) =>
+            prev.map((line) =>
+                line.key === lineKey ? { ...line, note } : line,
+            ),
+        );
+    };
+
+    const updateQty = (lineKey, qty) => {
         const parsed = Math.max(0, Number(qty) || 0);
         setCart((prev) =>
             prev
                 .map((line) =>
-                    line.product_id === productId
-                        ? { ...line, qty: parsed }
-                        : line,
+                    line.key === lineKey ? { ...line, qty: parsed } : line,
                 )
                 .filter((line) => line.qty > 0),
         );
     };
 
-    const removeLine = (productId) => {
-        setCart((prev) =>
-            prev.filter((line) => line.product_id !== productId),
-        );
+    const removeLine = (lineKey) => {
+        setCart((prev) => prev.filter((line) => line.key !== lineKey));
     };
 
     // Perkiraan tampilan saja — total resmi selalu dihitung ulang di server
@@ -190,10 +317,30 @@ export default function Index({
                 cash_received: cashReceived,
                 change_amount: changeAmount,
                 cash_account_code: cashAccountCode,
+                member_id: memberEnabled ? memberId : null,
+                member_name: memberEnabled && memberName.trim() !== '' ? memberName.trim() : null,
+                table_id: tableEnabled && tableId !== '' ? tableId : null,
+                note:
+                    noteEnabled && transactionNote.trim() !== ''
+                        ? transactionNote.trim()
+                        : null,
                 lines: cart.map((line) => ({
                     product_id: line.product_id,
                     qty: line.qty,
                     unit_price: line.unit_price,
+                    note:
+                        noteEnabled && line.note?.trim()
+                            ? line.note.trim()
+                            : null,
+                    // unit_price di atas SUDAH termasuk additional_price
+                    // tiap variasi ini (lihat computeUnitPrice) -- array
+                    // ini murni rincian snapshot untuk nota, server TIDAK
+                    // menghitung ulang harga darinya.
+                    variations: (line.variations ?? []).map((v) => ({
+                        variation_id: v.id,
+                        name: v.name,
+                        price: v.additional_price,
+                    })),
                 })),
             },
             {
@@ -202,6 +349,12 @@ export default function Index({
                 onSuccess: () => {
                     setCart([]);
                     setCashReceivedInput('');
+                    setMemberName('');
+                    setMemberId(null);
+                    setTableId('');
+                    setTransactionNote('');
+                    setOpenNoteFor(null);
+                    setVariationPicker(null);
                 },
                 onFinish: () => setProcessing(false),
             },
@@ -323,51 +476,246 @@ export default function Index({
                         </h3>
 
                         <div className="space-y-3">
-                            {cart.map((line) => (
-                                <div
-                                    key={line.product_id}
-                                    className="flex items-center gap-2 text-sm"
-                                >
-                                    <div className="flex-1">
-                                        <div className="font-medium text-gray-900">
-                                            {line.name}
+                            {cart.map((line) => {
+                                // Ada variasi UNTUK DIEDIT hanya kalau produknya
+                                // sendiri masih punya variasi aktif -- kalau
+                                // admin menonaktifkan semua variasi produk ini
+                                // SETELAH baris ditambahkan, baris lama tetap
+                                // menampilkan pilihannya (snapshot) tapi tombol
+                                // edit disembunyikan (tidak ada apa pun untuk
+                                // dipilih ulang).
+                                const product = productsById.get(line.product_id);
+                                const hasEditableVariations =
+                                    variationEnabled &&
+                                    (product?.variations ?? []).some(
+                                        (v) => v.is_active,
+                                    );
+                                return (
+                                    <div key={line.key} className="text-sm">
+                                        <div className="flex items-center gap-2">
+                                            <div className="flex-1">
+                                                <div className="font-medium text-gray-900">
+                                                    {line.name}
+                                                </div>
+                                                <div className="text-gray-500">
+                                                    {formatRupiah(line.unit_price)} /
+                                                    pcs
+                                                </div>
+                                                {/* Rincian variasi terpilih -- tap
+                                                    untuk mengubah (kalau produknya
+                                                    masih punya variasi aktif). */}
+                                                {line.variations.length > 0 && (
+                                                    <button
+                                                        type="button"
+                                                        disabled={!hasEditableVariations}
+                                                        onClick={() =>
+                                                            openVariationEditor(line)
+                                                        }
+                                                        className={
+                                                            'block text-left text-gray-500' +
+                                                            (hasEditableVariations
+                                                                ? ' hover:text-primary hover:underline'
+                                                                : '')
+                                                        }
+                                                    >
+                                                        {line.variations
+                                                            .map(
+                                                                (v) =>
+                                                                    `+ ${v.name} (+${formatRupiah(v.additional_price)})`,
+                                                            )
+                                                            .join(', ')}
+                                                    </button>
+                                                )}
+                                                {hasEditableVariations &&
+                                                    line.variations.length === 0 && (
+                                                        <button
+                                                            type="button"
+                                                            onClick={() =>
+                                                                openVariationEditor(line)
+                                                            }
+                                                            className="block text-left text-accent hover:underline"
+                                                        >
+                                                            + Tambah variasi
+                                                        </button>
+                                                    )}
+                                                {/* Pratinjau catatan tersimpan --
+                                                    muncul saat editor SEDANG
+                                                    tertutup, supaya kasir tetap
+                                                    lihat isinya tanpa harus
+                                                    membuka editor lagi. */}
+                                                {noteEnabled &&
+                                                    line.note?.trim() &&
+                                                    openNoteFor !== line.key && (
+                                                        <div className="italic text-gray-500">
+                                                            → {line.note.trim()}
+                                                        </div>
+                                                    )}
+                                            </div>
+                                            <input
+                                                type="number"
+                                                min="0"
+                                                step="1"
+                                                value={line.qty}
+                                                onChange={(e) =>
+                                                    updateQty(
+                                                        line.key,
+                                                        e.target.value,
+                                                    )
+                                                }
+                                                className="w-16 rounded-md border-gray-300 text-center shadow-sm focus:border-primary focus:ring-primary"
+                                            />
+                                            {noteEnabled && (
+                                                <button
+                                                    type="button"
+                                                    onClick={() =>
+                                                        setOpenNoteFor(
+                                                            openNoteFor === line.key
+                                                                ? null
+                                                                : line.key,
+                                                        )
+                                                    }
+                                                    className="px-1 text-lg leading-none text-gray-500 hover:text-primary"
+                                                    aria-label="Catatan item"
+                                                    title="Catatan item"
+                                                >
+                                                    📝
+                                                </button>
+                                            )}
+                                            <button
+                                                type="button"
+                                                onClick={() => removeLine(line.key)}
+                                                className="px-1 text-lg leading-none text-red-600 hover:text-red-800"
+                                                aria-label="Hapus"
+                                            >
+                                                &times;
+                                            </button>
                                         </div>
-                                        <div className="text-gray-500">
-                                            {formatRupiah(line.unit_price)} /
-                                            pcs
-                                        </div>
+
+                                        {noteEnabled && openNoteFor === line.key && (
+                                            <div className="mt-2 rounded-md bg-gray-50 p-2">
+                                                {noteTemplates.length > 0 && (
+                                                    <div className="mb-2 flex flex-wrap gap-1">
+                                                        {noteTemplates.map((template) => (
+                                                            <button
+                                                                key={template.id}
+                                                                type="button"
+                                                                onClick={() =>
+                                                                    updateNote(
+                                                                        line.key,
+                                                                        template.text,
+                                                                    )
+                                                                }
+                                                                className="rounded-full border border-gray-300 bg-white px-2 py-0.5 text-xs text-gray-700 hover:border-accent hover:text-accent"
+                                                            >
+                                                                {template.text}
+                                                            </button>
+                                                        ))}
+                                                    </div>
+                                                )}
+                                                <textarea
+                                                    rows={2}
+                                                    placeholder="Catatan untuk item ini..."
+                                                    value={line.note ?? ''}
+                                                    onChange={(e) =>
+                                                        updateNote(
+                                                            line.key,
+                                                            e.target.value,
+                                                        )
+                                                    }
+                                                    className="block w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-primary focus:ring-primary"
+                                                />
+                                            </div>
+                                        )}
                                     </div>
-                                    <input
-                                        type="number"
-                                        min="0"
-                                        step="1"
-                                        value={line.qty}
-                                        onChange={(e) =>
-                                            updateQty(
-                                                line.product_id,
-                                                e.target.value,
-                                            )
-                                        }
-                                        className="w-16 rounded-md border-gray-300 text-center shadow-sm focus:border-primary focus:ring-primary"
-                                    />
-                                    <button
-                                        type="button"
-                                        onClick={() =>
-                                            removeLine(line.product_id)
-                                        }
-                                        className="px-1 text-lg leading-none text-red-600 hover:text-red-800"
-                                        aria-label="Hapus"
-                                    >
-                                        &times;
-                                    </button>
-                                </div>
-                            ))}
+                                );
+                            })}
                             {cart.length === 0 && (
                                 <p className="text-sm text-gray-500">
                                     Keranjang kosong.
                                 </p>
                             )}
                         </div>
+
+                        {memberEnabled && (
+                            <div className="mt-4 border-t border-gray-200 pt-4">
+                                <InputLabel htmlFor="member_name" value="Pelanggan" />
+                                <MemberCombobox
+                                    value={memberName}
+                                    onChange={(text) => {
+                                        setMemberName(text);
+                                        setMemberId(null);
+                                    }}
+                                    onSelect={(member) => {
+                                        setMemberName(member.name);
+                                        setMemberId(member.id);
+                                    }}
+                                    className="mt-1"
+                                />
+                            </div>
+                        )}
+
+                        {tableEnabled && (
+                            <div
+                                className={
+                                    memberEnabled
+                                        ? 'mt-4'
+                                        : 'mt-4 border-t border-gray-200 pt-4'
+                                }
+                            >
+                                <InputLabel htmlFor="table_id" value="Meja" />
+                                <SelectInput
+                                    id="table_id"
+                                    className="mt-1 h-10 block w-full"
+                                    value={tableId}
+                                    onChange={(e) => setTableId(e.target.value)}
+                                >
+                                    <option value="">Tanpa meja</option>
+                                    {tables.map((table) => (
+                                        <option key={table.id} value={table.id}>
+                                            {table.name}
+                                        </option>
+                                    ))}
+                                </SelectInput>
+                            </div>
+                        )}
+
+                        {noteEnabled && (
+                            <div
+                                className={
+                                    memberEnabled || tableEnabled
+                                        ? 'mt-4'
+                                        : 'mt-4 border-t border-gray-200 pt-4'
+                                }
+                            >
+                                <InputLabel htmlFor="transaction_note" value="Catatan" />
+                                {noteTemplates.length > 0 && (
+                                    <div className="mt-1 flex flex-wrap gap-1">
+                                        {noteTemplates.map((template) => (
+                                            <button
+                                                key={template.id}
+                                                type="button"
+                                                onClick={() =>
+                                                    setTransactionNote(template.text)
+                                                }
+                                                className="rounded-full border border-gray-300 bg-white px-2 py-0.5 text-xs text-gray-700 hover:border-accent hover:text-accent"
+                                            >
+                                                {template.text}
+                                            </button>
+                                        ))}
+                                    </div>
+                                )}
+                                <textarea
+                                    id="transaction_note"
+                                    rows={2}
+                                    placeholder="mis. Antar ke meja 5"
+                                    value={transactionNote}
+                                    onChange={(e) =>
+                                        setTransactionNote(e.target.value)
+                                    }
+                                    className="mt-1 block w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-primary focus:ring-primary"
+                                />
+                            </div>
+                        )}
 
                         <div className="mt-4 space-y-1 border-t border-gray-200 pt-4 text-sm">
                             <div className="flex justify-between text-gray-600">
@@ -498,6 +846,14 @@ export default function Index({
                     </div>
                 </div>
             </div>
+
+            <VariationPickerModal
+                show={variationPicker !== null}
+                product={variationPicker?.product ?? null}
+                initialSelectedIds={variationPicker?.initialSelectedIds ?? []}
+                onConfirm={handleVariationConfirm}
+                onClose={() => setVariationPicker(null)}
+            />
         </AuthenticatedLayout>
     );
 }

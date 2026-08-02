@@ -192,6 +192,156 @@ class SettingControllerTest extends TestCase
         $this->assertTrue(CompanySetting::current()->fresh()->mobile_print_receipt);
     }
 
+    public function test_member_enabled_defaults_to_false(): void
+    {
+        $this->assertFalse(CompanySetting::current()->member_enabled);
+    }
+
+    public function test_admin_can_turn_on_member_enabled_without_creating_a_log_entry(): void
+    {
+        $admin = User::factory()->create(['role_id' => $this->roleWith(['company-settings.manage'])->id]);
+
+        $response = $this->actingAs($admin)->put('/pengaturan/member', [
+            'member_enabled' => true,
+        ]);
+
+        $response->assertRedirect(route('pengaturan.index'));
+        $this->assertTrue(CompanySetting::current()->fresh()->member_enabled);
+        $this->assertSame(0, CompanySettingLog::count());
+    }
+
+    public function test_non_admin_cannot_update_member_enabled(): void
+    {
+        $kasir = User::factory()->create(['role_id' => $this->roleWith(['kasir.access'])->id]);
+
+        $response = $this->actingAs($kasir)->put('/pengaturan/member', [
+            'member_enabled' => true,
+        ]);
+
+        $response->assertForbidden();
+        $this->assertFalse(CompanySetting::current()->fresh()->member_enabled);
+    }
+
+    public function test_table_enabled_defaults_to_false(): void
+    {
+        $this->assertFalse(CompanySetting::current()->table_enabled);
+    }
+
+    public function test_admin_can_turn_on_table_enabled_without_creating_a_log_entry(): void
+    {
+        $admin = User::factory()->create(['role_id' => $this->roleWith(['company-settings.manage'])->id]);
+
+        $response = $this->actingAs($admin)->put('/pengaturan/meja', [
+            'table_enabled' => true,
+        ]);
+
+        $response->assertRedirect(route('pengaturan.index'));
+        $this->assertTrue(CompanySetting::current()->fresh()->table_enabled);
+        $this->assertSame(0, CompanySettingLog::count());
+    }
+
+    public function test_non_admin_cannot_update_table_enabled(): void
+    {
+        $kasir = User::factory()->create(['role_id' => $this->roleWith(['kasir.access'])->id]);
+
+        $response = $this->actingAs($kasir)->put('/pengaturan/meja', [
+            'table_enabled' => true,
+        ]);
+
+        $response->assertForbidden();
+        $this->assertFalse(CompanySetting::current()->fresh()->table_enabled);
+    }
+
+    public function test_note_enabled_defaults_to_false(): void
+    {
+        $this->assertFalse(CompanySetting::current()->note_enabled);
+    }
+
+    public function test_admin_can_turn_on_note_enabled_without_creating_a_log_entry(): void
+    {
+        $admin = User::factory()->create(['role_id' => $this->roleWith(['company-settings.manage'])->id]);
+
+        $response = $this->actingAs($admin)->put('/pengaturan/catatan', [
+            'note_enabled' => true,
+        ]);
+
+        $response->assertRedirect(route('pengaturan.index'));
+        $this->assertTrue(CompanySetting::current()->fresh()->note_enabled);
+        $this->assertSame(0, CompanySettingLog::count());
+    }
+
+    public function test_non_admin_cannot_update_note_enabled(): void
+    {
+        $kasir = User::factory()->create(['role_id' => $this->roleWith(['kasir.access'])->id]);
+
+        $response = $this->actingAs($kasir)->put('/pengaturan/catatan', [
+            'note_enabled' => true,
+        ]);
+
+        $response->assertForbidden();
+        $this->assertFalse(CompanySetting::current()->fresh()->note_enabled);
+    }
+
+    public function test_variation_enabled_defaults_to_false(): void
+    {
+        $this->assertFalse(CompanySetting::current()->variation_enabled);
+    }
+
+    public function test_admin_can_turn_on_variation_enabled_without_creating_a_log_entry(): void
+    {
+        $admin = User::factory()->create(['role_id' => $this->roleWith(['company-settings.manage'])->id]);
+
+        $response = $this->actingAs($admin)->put('/pengaturan/variasi', [
+            'variation_enabled' => true,
+        ]);
+
+        $response->assertRedirect(route('pengaturan.index'));
+        $this->assertTrue(CompanySetting::current()->fresh()->variation_enabled);
+        $this->assertSame(0, CompanySettingLog::count());
+    }
+
+    public function test_non_admin_cannot_update_variation_enabled(): void
+    {
+        $kasir = User::factory()->create(['role_id' => $this->roleWith(['kasir.access'])->id]);
+
+        $response = $this->actingAs($kasir)->put('/pengaturan/variasi', [
+            'variation_enabled' => true,
+        ]);
+
+        $response->assertForbidden();
+        $this->assertFalse(CompanySetting::current()->fresh()->variation_enabled);
+    }
+
+    public function test_draft_enabled_defaults_to_false(): void
+    {
+        $this->assertFalse(CompanySetting::current()->draft_enabled);
+    }
+
+    public function test_admin_can_turn_on_draft_enabled_without_creating_a_log_entry(): void
+    {
+        $admin = User::factory()->create(['role_id' => $this->roleWith(['company-settings.manage'])->id]);
+
+        $response = $this->actingAs($admin)->put('/pengaturan/draft', [
+            'draft_enabled' => true,
+        ]);
+
+        $response->assertRedirect(route('pengaturan.index'));
+        $this->assertTrue(CompanySetting::current()->fresh()->draft_enabled);
+        $this->assertSame(0, CompanySettingLog::count());
+    }
+
+    public function test_non_admin_cannot_update_draft_enabled(): void
+    {
+        $kasir = User::factory()->create(['role_id' => $this->roleWith(['kasir.access'])->id]);
+
+        $response = $this->actingAs($kasir)->put('/pengaturan/draft', [
+            'draft_enabled' => true,
+        ]);
+
+        $response->assertForbidden();
+        $this->assertFalse(CompanySetting::current()->fresh()->draft_enabled);
+    }
+
     public function test_admin_can_change_product_display_mode_without_creating_a_log_entry(): void
     {
         $admin = User::factory()->create(['role_id' => $this->roleWith(['company-settings.manage'])->id]);

@@ -87,7 +87,7 @@ class SaleHistoryController extends Controller
     public function show(Sale $sale): Response
     {
         return Inertia::render('Penjualan/Show', [
-            'sale' => $sale->load(['lines.product']),
+            'sale' => $sale->load(['lines.product', 'lines.variations']),
         ]);
     }
 
@@ -112,7 +112,7 @@ class SaleHistoryController extends Controller
         $setting = CompanySetting::current();
 
         return Inertia::render('Penjualan/Receipt', [
-            'sale' => $sale->load(['lines.product', 'createdByUser']),
+            'sale' => $sale->load(['lines.product', 'lines.variations', 'createdByUser']),
             'store' => [
                 'name' => $setting->store_name,
                 'address' => $setting->store_address,

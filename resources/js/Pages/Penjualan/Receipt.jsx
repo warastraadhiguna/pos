@@ -75,18 +75,34 @@ export default function Receipt({ sale, store }) {
                     <div>{formatDateTimeWIB(sale.occurred_at, sale.date)}</div>
                     <div>No: {shortUuid(sale.local_uuid)}</div>
                     {cashierName && <div>Kasir: {cashierName}</div>}
+                    {sale.member_name_snapshot && <div>Pelanggan: {sale.member_name_snapshot}</div>}
+                    {sale.table_name_snapshot && <div>Meja: {sale.table_name_snapshot}</div>}
 
                     <div className="my-1 border-t border-dashed border-gray-900" />
 
                     {sale.lines.map((line) => (
                         <div key={line.id} className="mb-1">
                             <div>{line.product_name ?? line.product.name}</div>
+                            {line.variations?.map((variation) => (
+                                <div key={variation.id}>
+                                    &nbsp;&nbsp;+ {variation.name_snapshot} (+
+                                    {formatRupiah(variation.price_snapshot)})
+                                </div>
+                            ))}
+                            {line.note && <div>&nbsp;&nbsp;→ {line.note}</div>}
                             <Row
                                 label={`${formatDecimalID(line.qty, 4)} x ${formatRupiah(line.unit_price)}`}
                                 value={formatRupiah(line.line_total)}
                             />
                         </div>
                     ))}
+
+                    {sale.note && (
+                        <>
+                            <div className="my-1 border-t border-dashed border-gray-900" />
+                            <div>Catatan: {sale.note}</div>
+                        </>
+                    )}
 
                     <div className="my-1 border-t border-dashed border-gray-900" />
 

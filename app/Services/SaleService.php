@@ -7,8 +7,12 @@ use App\Exceptions\InsufficientCashReceivedException;
 use App\Exceptions\UnreconciledChangeAmountException;
 use App\Exceptions\UnreconciledSaleTotalException;
 use App\Models\CompanySetting;
+use App\Models\DiningTable;
+use App\Models\Member;
 use App\Models\Product;
+use App\Models\ProductVariation;
 use App\Models\Sale;
+use App\Models\SaleLine;
 use App\Models\Warehouse;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Carbon;
@@ -82,7 +86,12 @@ class SaleService
      *     device_label?: string|null,
      *     cash_received?: int|float|string,
      *     change_amount?: int|float|string,
-     *     lines: array<int, array{product_id: int, qty: int|float|string, unit_price: int|float|string}>,
+     *     member_id?: int|null,
+     *     member_name?: string|null,
+     *     table_id?: int|null,
+     *     table_name?: string|null,
+     *     note?: string|null,
+     *     lines: array<int, array{product_id: int, qty: int|float|string, unit_price: int|float|string, note?: string|null, variations?: array<int, array{variation_id: int, name?: string|null, price?: int|float|string|null}>}>,
      * }  $data
      *
      * cash_received/change_amount are OPTIONAL — only the mobile POS
@@ -118,6 +127,68 @@ class SaleService
      * clients, or the web Kasir flow which never sends it), there is
      * nothing to cross-check against, so this falls back to today's
      * behaviour unchanged: trust created_by_user_id as-is.
+     *
+     * member_id/member_name are both OPTIONAL and independent, same as the
+     * product_name snapshot pattern in createSaleLine(): member_id links the
+     * sale to a real Member row (for future per-member history and the
+     * upcoming draft feature — see Member model docblock), while
+     * member_name_snapshot is what actually gets frozen and shown on every
+     * past receipt forever, regardless of whether that Member is later
+     * renamed or deactivated. When member_id is given but member_name is
+     * not, the Member's current name is snapshotted (real-time web Kasir
+     * case — no time gap between pick and save). When member_name is given
+     * explicitly, it always wins (offline mobile case: the name as it was
+     * at the moment the cashier actually typed/picked it, which may predate
+     * a rename that happened before this sale was later pushed to the
+     * server). A cashier may also type a name with no member_id at all —
+     * that's a valid walk-in customer, not an error. When neither is given,
+     * the sale simply has no customer attached, and every receipt line for
+     * "Pelanggan: ..." is skipped entirely.
+     *
+     * table_id/table_name follow the EXACT same shape and reasoning as
+     * member_id/member_name (see above) — table_id links the sale to a
+     * real DiningTable row (for the future draft feature, which reuses
+     * this same table_id column), while table_name_snapshot is what
+     * actually gets frozen and shown on the receipt, unaffected by later
+     * renaming/deactivating that table. A cashier may also type a table
+     * name with no table_id at all (mis. "meja tambahan di luar" yang
+     * belum terdaftar) — valid, not an error. When neither is given, no
+     * "Meja: ..." line appears on the receipt.
+     *
+     * note (per-sale) and lines[].note (per-line) are BOTH plain optional
+     * strings, stored exactly as given — unlike member/table there is no
+     * paired `_id` to resolve here, because a note isn't a reference to
+     * another entity that can later be renamed; whatever text the cashier
+     * typed or picked from a template (then possibly edited) IS already
+     * the correct permanent record. Empty/absent means the "Catatan"
+     * line (per-sale) or "→ ..." line (per-item) is skipped on the
+     * receipt entirely.
+     *
+     * lines[].variations — Variasi Berbayar. KRUSIAL: this does NOT change
+     * how lineInclusive/lineNet/lineTax are computed below — `unit_price`
+     * sent by the caller is trusted exactly as it already was BEFORE this
+     * feature existed (this method has never cross-checked unit_price
+     * against Product::sell_price; see the qty/unitPrice lines in
+     * createSaleLine()). The caller (web Kasir / mobile) is expected to
+     * have already folded every selected variation's additional_price
+     * into that unit_price client-side, the same way it already folds in
+     * nothing else today — variations never affect PRICE math here.
+     *
+     * They DO affect HPP (Tahap 2): each entry's `variation_id` is
+     * validated to belong to this line's product, then frozen into
+     * `sale_line_variations` with `hpp_snapshot` set from that variation's
+     * OWN BOM (`product_variation_components`, consumed via
+     * `InventoryService::recordOutbound()` — see
+     * consumeSaleLineVariations()), folded into this line's `hpp_total`
+     * alongside the product's own components. A variation with no BOM rows
+     * still gets `hpp_snapshot = '0'`, identical to Tahap 1's behaviour —
+     * old rows created before Tahap 2 existed keep their frozen '0'
+     * forever, untouched by this method. `name`/`price` follow the exact
+     * same optional-override shape as member_name/table_name: given
+     * explicitly, they win (offline mobile: the values as picked at the
+     * moment of sale, which may predate a server-side rename); absent,
+     * they're resolved from the ProductVariation row live (real-time web
+     * Kasir case).
      */
     public function createSale(array $data): Sale
     {
@@ -126,7 +197,7 @@ class SaleService
         if ($localUuid && ($existing = Sale::where('local_uuid', $localUuid)->first())) {
             $existing->wasReplayed = true;
 
-            return $existing->load('lines');
+            return $existing->load('lines.variations');
         }
 
         // Cross-check ONLY on first creation — a replay (handled above)
@@ -161,10 +232,25 @@ class SaleService
             //     yang sekarang Asia/Jakarta juga -- sudah WIB, jadi tetap benar.
             $occurredAt = Carbon::parse($data['date'])->setTimezone('Asia/Jakarta');
 
+            $member = ! empty($data['member_id']) ? Member::findOrFail($data['member_id']) : null;
+            $memberNameSnapshot = trim((string) ($data['member_name'] ?? '')) !== ''
+                ? $data['member_name']
+                : $member?->name;
+
+            $table = ! empty($data['table_id']) ? DiningTable::findOrFail($data['table_id']) : null;
+            $tableNameSnapshot = trim((string) ($data['table_name'] ?? '')) !== ''
+                ? $data['table_name']
+                : $table?->name;
+
             $sale = new Sale([
                 'outlet_id' => $data['outlet_id'],
                 'warehouse_id' => $data['warehouse_id'],
                 'created_by_user_id' => $data['created_by_user_id'] ?? null,
+                'member_id' => $member?->id,
+                'member_name_snapshot' => $memberNameSnapshot,
+                'table_id' => $table?->id,
+                'table_name_snapshot' => $tableNameSnapshot,
+                'note' => trim((string) ($data['note'] ?? '')) !== '' ? $data['note'] : null,
                 'date' => $occurredAt,
                 'occurred_at' => $occurredAt,
                 'local_uuid' => $localUuid ?? (string) Str::uuid(),
@@ -187,7 +273,7 @@ class SaleService
                     $existing = Sale::where('local_uuid', $localUuid)->firstOrFail();
                     $existing->wasReplayed = true;
 
-                    return $existing->load('lines');
+                    return $existing->load('lines.variations');
                 }
 
                 throw $e;
@@ -257,7 +343,7 @@ class SaleService
 
             $this->postSaleJournal($sale, $subtotal, $taxTotal, $grandTotal, $hppGrandTotal, $occurredAt, $cashAccountCode);
 
-            $freshSale = $sale->fresh('lines');
+            $freshSale = $sale->fresh('lines.variations');
             $freshSale->wasReplayed = false;
 
             return $freshSale;
@@ -303,7 +389,7 @@ class SaleService
      * (was it untaxed because the product isn't taxable, or because the
      * switch was off?).
      *
-     * @param  array{product_id: int, product_name?: ?string, qty: int|float|string, unit_price: int|float|string}  $lineData
+     * @param  array{product_id: int, product_name?: ?string, qty: int|float|string, unit_price: int|float|string, note?: ?string, variations?: array<int, array{variation_id: int, name?: ?string, price?: int|float|string|null}>}  $lineData
      * @return array{0: string, 1: string, 2: string, 3: string} [line_net, line_tax, line_inclusive, hpp_total]
      */
     private function createSaleLine(Sale $sale, Warehouse $warehouse, array $lineData, \DateTimeInterface|string $date, bool $ppnActive): array
@@ -356,7 +442,16 @@ class SaleService
             $hppLineTotal = bcadd($hppLineTotal, $hpp, self::SCALE);
         }
 
-        $sale->lines()->create([
+        // Tahap 2: konsumsi BOM tiap variasi terpilih (kalau ada) DULU, di
+        // sini -- SEBELUM sale_lines dibuat -- supaya hpp_total baris sudah
+        // benar (produk + Σ variasi) sejak baris pertama kali ditulis,
+        // bukan lewat UPDATE susulan. Lihat consumeSaleLineVariations().
+        [$variationRows, $variationHppTotal] = $this->consumeSaleLineVariations(
+            $sale, $warehouse, $product, $qty, $lineData['variations'] ?? [], $date,
+        );
+        $hppLineTotal = bcadd($hppLineTotal, $variationHppTotal, self::SCALE);
+
+        $saleLine = $sale->lines()->create([
             'product_id' => $product->id,
             'product_name' => $productName,
             'qty' => $qty,
@@ -364,9 +459,109 @@ class SaleService
             'tax_rate_id' => $product->tax_rate_id,
             'line_total' => $lineInclusive,
             'hpp_total' => $hppLineTotal,
+            'note' => trim((string) ($lineData['note'] ?? '')) !== '' ? $lineData['note'] : null,
         ]);
 
+        foreach ($variationRows as $row) {
+            $saleLine->variations()->create($row);
+        }
+
         return [$lineNet, $lineTax, $lineInclusive, $hppLineTotal];
+    }
+
+    /**
+     * Tahap 2 dari fitur Variasi Berbayar -- konsumsi BOM tiap variasi
+     * terpilih (kalau ada) lewat `InventoryService::recordOutbound()`, PERSIS
+     * jalur yang sama dipakai komponen BOM produk beberapa baris di atas
+     * (Moving Average, `lockLedger()` per item+warehouse yang sama -- tidak
+     * ada mekanisme konkurensi baru). Variasi tanpa baris di
+     * `product_variation_components` (kolom `components` kosong) -> HPP-nya
+     * '0', identik perilaku Tahap 1.
+     *
+     * Movement di-source ke `$sale` (Sale utuh), BUKAN ke sale_line/
+     * sale_line_variation -- konsisten dengan bagaimana movement komponen
+     * PRODUK di atas juga di-source ke `$sale`, bukan ke sale_line. Satu
+     * transaksi penjualan = satu dokumen sumber untuk SEMUA stock_movements
+     * yang ditimbulkannya, terlepas dari baris/variasi mana penyebabnya --
+     * `Sale::stockMovements()` (morphMany) tetap satu-satunya jalur query,
+     * tanpa perlu tahu dua polymorphic type berbeda.
+     *
+     * Stok bahan variasi yang tidak cukup TIDAK ditolak dan TIDAK
+     * menghasilkan peringatan apa pun di sini -- `recordOutbound()` sendiri
+     * tidak pernah mengecek `running_qty >= qty` untuk komponen produk
+     * (lihat docblock InventoryService, stok minus disengaja diizinkan,
+     * lihat docs/ROADMAP.md), jadi komponen variasi mengikuti PERSIS
+     * perilaku yang sama -- tidak ada aturan baru/berbeda untuk variasi.
+     *
+     * HPP dihitung 100% di server dari harga rata-rata bergerak SAAT
+     * transaksi -- mobile/web TIDAK PERNAH mengirim atau tahu angka HPP
+     * variasi, sama seperti mobile/web tidak pernah tahu HPP komponen
+     * produk hari ini.
+     *
+     * hpp_snapshot dari transaksi Tahap 1 LAMA (dibuat sebelum kolom
+     * `product_variation_components` ada sama sekali) TIDAK PERNAH disentuh
+     * ulang oleh method ini -- method ini hanya jalan untuk transaksi BARU,
+     * baris lama tetap '0' selamanya (murni angka historis beku, sama
+     * seperti product_name/member_name_snapshot).
+     *
+     * @param  array<int, array{variation_id: int, name?: ?string, price?: int|float|string|null}>  $variations
+     * @return array{0: array<int, array{variation_id: int, name_snapshot: string, price_snapshot: string, hpp_snapshot: string}>, 1: string} [rows to insert once sale_line exists, total variation HPP for this line]
+     */
+    private function consumeSaleLineVariations(
+        Sale $sale,
+        Warehouse $warehouse,
+        Product $product,
+        string $qty,
+        array $variations,
+        \DateTimeInterface|string $date,
+    ): array {
+        $rows = [];
+        $totalHpp = '0';
+
+        foreach ($variations as $variationData) {
+            // Wajib milik produk baris ini -- mencegah baris "salah
+            // tempel" variasi produk lain (beda dari member_id/table_id
+            // yang boleh kosong; variasi bukan sesuatu yang bisa diketik
+            // bebas, harus berasal dari katalog produk itu sendiri).
+            $variation = ProductVariation::with(['components.item', 'components.uom'])
+                ->where('product_id', $product->id)
+                ->findOrFail($variationData['variation_id']);
+
+            $nameSnapshot = trim((string) ($variationData['name'] ?? '')) !== ''
+                ? $variationData['name']
+                : $variation->name;
+
+            $priceSnapshot = array_key_exists('price', $variationData) && $variationData['price'] !== null
+                ? (string) $variationData['price']
+                : (string) $variation->additional_price;
+
+            $variationHpp = '0';
+
+            foreach ($variation->components as $component) {
+                $componentQty = bcmul((string) $component->qty, $qty, self::SCALE);
+                $componentQtyInBaseUom = $this->inventory->convertToItemBaseUom($component->item, $component->uom, $componentQty);
+
+                $hpp = $this->inventory->recordOutbound(
+                    $component->item,
+                    $warehouse,
+                    $componentQtyInBaseUom,
+                    $sale,
+                    $date,
+                );
+
+                $variationHpp = bcadd($variationHpp, $hpp, self::SCALE);
+            }
+
+            $rows[] = [
+                'variation_id' => $variation->id,
+                'name_snapshot' => $nameSnapshot,
+                'price_snapshot' => $priceSnapshot,
+                'hpp_snapshot' => $variationHpp,
+            ];
+            $totalHpp = bcadd($totalHpp, $variationHpp, self::SCALE);
+        }
+
+        return [$rows, $totalHpp];
     }
 
     private function postSaleJournal(

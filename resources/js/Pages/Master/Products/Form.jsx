@@ -38,6 +38,22 @@ export default function Form({ product, uoms, taxRates, productCategories }) {
             qty: c.qty,
             uom_id: c.uom_id,
         })),
+        // `id` dipertahankan (bukan dibuang) -- server pakai ini untuk tahu
+        // baris mana yang diedit vs baru, lihat ProductController::syncVariations().
+        // `components` (Tahap 2) -- BOM milik variasi ini sendiri, bentuknya
+        // identik `components` produk di atas, kosong berarti variasi ini
+        // tidak memotong stok/HPP apa pun saat dijual (sama seperti Tahap 1).
+        variations: (product?.variations ?? []).map((v) => ({
+            id: v.id,
+            name: v.name,
+            additional_price: v.additional_price,
+            is_active: v.is_active,
+            components: (v.components ?? []).map((c) => ({
+                item_id: c.item_id,
+                qty: c.qty,
+                uom_id: c.uom_id,
+            })),
+        })),
         image: null,
         remove_image: false,
     });
@@ -72,6 +88,15 @@ export default function Form({ product, uoms, taxRates, productCategories }) {
     // indeksnya dengan data.components.
     const [bomItems, setBomItems] = useState(() =>
         (product?.components ?? []).map((c) => c.item ?? null),
+    );
+
+    // Sama seperti bomItems di atas, tapi bertingkat: satu array item per
+    // variasi (indeks selaras data.variations), tiap elemennya sendiri
+    // array item per komponen (indeks selaras variation.components).
+    const [variationBomItems, setVariationBomItems] = useState(() =>
+        (product?.variations ?? []).map((v) =>
+            (v.components ?? []).map((c) => c.item ?? null),
+        ),
     );
 
     const [mode, setMode] = useState(() => {
@@ -150,6 +175,131 @@ export default function Form({ product, uoms, taxRates, productCategories }) {
         setData('components', updated);
         setBomItems((previous) =>
             previous.map((existing, i) => (i === index ? item : existing)),
+        );
+    };
+
+    const addVariation = () => {
+        setData('variations', [
+            ...data.variations,
+            {
+                id: null,
+                name: '',
+                additional_price: '0',
+                is_active: true,
+                components: [],
+            },
+        ]);
+        setVariationBomItems((previous) => [...previous, []]);
+    };
+
+    const removeVariation = (index) => {
+        setData(
+            'variations',
+            data.variations.filter((_, i) => i !== index),
+        );
+        setVariationBomItems((previous) =>
+            previous.filter((_, i) => i !== index),
+        );
+    };
+
+    const updateVariation = (index, field, value) => {
+        const updated = data.variations.map((variation, i) =>
+            i === index ? { ...variation, [field]: value } : variation,
+        );
+        setData('variations', updated);
+    };
+
+    // BOM per variasi (Tahap 2) -- empat fungsi ini mirror
+    // addComponent/removeComponent/updateComponent/selectBomItem di atas
+    // persis, cuma dioperasikan pada data.variations[variationIndex].components
+    // (satu tingkat lebih dalam) alih-alih data.components langsung.
+    const addVariationComponent = (variationIndex) => {
+        const updated = data.variations.map((variation, i) =>
+            i === variationIndex
+                ? {
+                      ...variation,
+                      components: [
+                          ...variation.components,
+                          { item_id: '', qty: '', uom_id: '' },
+                      ],
+                  }
+                : variation,
+        );
+        setData('variations', updated);
+        setVariationBomItems((previous) =>
+            previous.map((items, i) =>
+                i === variationIndex ? [...items, null] : items,
+            ),
+        );
+    };
+
+    const removeVariationComponent = (variationIndex, componentIndex) => {
+        const updated = data.variations.map((variation, i) =>
+            i === variationIndex
+                ? {
+                      ...variation,
+                      components: variation.components.filter(
+                          (_, ci) => ci !== componentIndex,
+                      ),
+                  }
+                : variation,
+        );
+        setData('variations', updated);
+        setVariationBomItems((previous) =>
+            previous.map((items, i) =>
+                i === variationIndex
+                    ? items.filter((_, ci) => ci !== componentIndex)
+                    : items,
+            ),
+        );
+    };
+
+    const updateVariationComponent = (
+        variationIndex,
+        componentIndex,
+        field,
+        value,
+    ) => {
+        const updated = data.variations.map((variation, i) => {
+            if (i !== variationIndex) return variation;
+            return {
+                ...variation,
+                components: variation.components.map((component, ci) =>
+                    ci === componentIndex
+                        ? { ...component, [field]: value }
+                        : component,
+                ),
+            };
+        });
+        setData('variations', updated);
+    };
+
+    const selectVariationBomItem = (variationIndex, componentIndex, item) => {
+        // Build the whole row in one setData call -- sama alasan
+        // selectBomItem() di atas.
+        const updated = data.variations.map((variation, i) => {
+            if (i !== variationIndex) return variation;
+            return {
+                ...variation,
+                components: variation.components.map((component, ci) => {
+                    if (ci !== componentIndex) return component;
+                    return {
+                        ...component,
+                        item_id: item.id,
+                        uom_id: component.uom_id || item.base_uom_id,
+                    };
+                }),
+            };
+        });
+        setData('variations', updated);
+        setVariationBomItems((previous) =>
+            previous.map((items, i) =>
+                i === variationIndex
+                    ? items.map((existing, ci) =>
+                          ci === componentIndex ? item : existing,
+                      )
+                    : items,
+            ),
         );
     };
 
@@ -599,6 +749,312 @@ export default function Form({ product, uoms, taxRates, productCategories }) {
                                         </div>
                                     </div>
                                 )}
+                            </div>
+
+                            <div>
+                                <div className="flex items-center justify-between">
+                                    <InputLabel value="Variasi" />
+                                    <SecondaryButton
+                                        type="button"
+                                        className="whitespace-nowrap"
+                                        onClick={addVariation}
+                                    >
+                                        Tambah Variasi
+                                    </SecondaryButton>
+                                </div>
+                                <p className="mt-1 text-sm text-gray-500">
+                                    Opsional -- mis. "Gelas Besar" +2.000.
+                                    Kasir bisa memilih beberapa variasi
+                                    sekaligus per item saat fitur ini aktif
+                                    (Pengaturan &gt; Variasi). Variasi boleh
+                                    punya bahan sendiri (mis. "Bawa Pulang" =
+                                    1x gelas plastik) -- terisi bahan berarti
+                                    variasi itu ikut memotong stok & menambah
+                                    HPP saat dijual; kosong berarti cuma
+                                    menambah harga jual, sama seperti dulu.
+                                </p>
+                                <InputError
+                                    className="mt-2"
+                                    message={errors.variations}
+                                />
+
+                                <div className="mt-3 space-y-3">
+                                    {data.variations.map((variation, index) => (
+                                        <div
+                                            key={variation.id ?? `new-${index}`}
+                                            className="rounded-md border border-gray-200 p-3"
+                                        >
+                                            <div className="flex items-center gap-2">
+                                                <div className="flex-1">
+                                                    <TextInput
+                                                        className="block w-full"
+                                                        placeholder="Nama variasi (mis. Gelas Besar)"
+                                                        value={variation.name}
+                                                        onChange={(e) =>
+                                                            updateVariation(
+                                                                index,
+                                                                'name',
+                                                                e.target.value,
+                                                            )
+                                                        }
+                                                    />
+                                                    <InputError
+                                                        className="mt-1"
+                                                        message={
+                                                            errors[
+                                                                `variations.${index}.name`
+                                                            ]
+                                                        }
+                                                    />
+                                                </div>
+
+                                                <div className="w-36">
+                                                    <NumberInput
+                                                        className="h-10 block w-full"
+                                                        placeholder="Tambahan harga"
+                                                        maxDecimals={0}
+                                                        value={
+                                                            variation.additional_price
+                                                        }
+                                                        onChange={(plain) =>
+                                                            updateVariation(
+                                                                index,
+                                                                'additional_price',
+                                                                plain,
+                                                            )
+                                                        }
+                                                    />
+                                                    <InputError
+                                                        className="mt-1"
+                                                        message={
+                                                            errors[
+                                                                `variations.${index}.additional_price`
+                                                            ]
+                                                        }
+                                                    />
+                                                </div>
+
+                                                <label className="flex items-center gap-2 text-sm text-gray-700">
+                                                    <Checkbox
+                                                        checked={
+                                                            variation.is_active
+                                                        }
+                                                        onChange={(e) =>
+                                                            updateVariation(
+                                                                index,
+                                                                'is_active',
+                                                                e.target.checked,
+                                                            )
+                                                        }
+                                                    />
+                                                    Aktif
+                                                </label>
+
+                                                <DangerButton
+                                                    type="button"
+                                                    className="h-10"
+                                                    onClick={() =>
+                                                        removeVariation(index)
+                                                    }
+                                                >
+                                                    Hapus
+                                                </DangerButton>
+                                            </div>
+
+                                            <div className="mt-3 border-t border-gray-100 pt-3">
+                                                <div className="flex items-center justify-between">
+                                                    <p className="text-xs font-medium text-gray-500">
+                                                        Bahan variasi ini (opsional)
+                                                    </p>
+                                                    <SecondaryButton
+                                                        type="button"
+                                                        className="whitespace-nowrap text-xs"
+                                                        onClick={() =>
+                                                            addVariationComponent(
+                                                                index,
+                                                            )
+                                                        }
+                                                    >
+                                                        Tambah Bahan
+                                                    </SecondaryButton>
+                                                </div>
+                                                <InputError
+                                                    className="mt-1"
+                                                    message={
+                                                        errors[
+                                                            `variations.${index}.components`
+                                                        ]
+                                                    }
+                                                />
+
+                                                <div className="mt-2 space-y-2">
+                                                    {variation.components.map(
+                                                        (component, cIndex) => (
+                                                            <div
+                                                                key={cIndex}
+                                                                className="flex items-center gap-2"
+                                                            >
+                                                                <div className="flex-1">
+                                                                    <ItemCombobox
+                                                                        key={
+                                                                            variationBomItems[
+                                                                                index
+                                                                            ]?.[
+                                                                                cIndex
+                                                                            ]
+                                                                                ?.id ??
+                                                                            `empty-${index}-${cIndex}`
+                                                                        }
+                                                                        className="h-9"
+                                                                        initialItem={
+                                                                            variationBomItems[
+                                                                                index
+                                                                            ]?.[
+                                                                                cIndex
+                                                                            ] ??
+                                                                            null
+                                                                        }
+                                                                        onSelect={(
+                                                                            item,
+                                                                        ) =>
+                                                                            selectVariationBomItem(
+                                                                                index,
+                                                                                cIndex,
+                                                                                item,
+                                                                            )
+                                                                        }
+                                                                    />
+                                                                    <InputError
+                                                                        className="mt-1"
+                                                                        message={
+                                                                            errors[
+                                                                                `variations.${index}.components.${cIndex}.item_id`
+                                                                            ]
+                                                                        }
+                                                                    />
+                                                                </div>
+
+                                                                <div className="w-24">
+                                                                    <NumberInput
+                                                                        className="h-9 block w-full"
+                                                                        placeholder="Qty"
+                                                                        maxDecimals={
+                                                                            4
+                                                                        }
+                                                                        value={
+                                                                            component.qty
+                                                                        }
+                                                                        onChange={(
+                                                                            plain,
+                                                                        ) =>
+                                                                            updateVariationComponent(
+                                                                                index,
+                                                                                cIndex,
+                                                                                'qty',
+                                                                                plain,
+                                                                            )
+                                                                        }
+                                                                    />
+                                                                    <InputError
+                                                                        className="mt-1"
+                                                                        message={
+                                                                            errors[
+                                                                                `variations.${index}.components.${cIndex}.qty`
+                                                                            ]
+                                                                        }
+                                                                    />
+                                                                </div>
+
+                                                                <div className="w-32">
+                                                                    <SelectInput
+                                                                        className="h-9 block w-full"
+                                                                        value={
+                                                                            component.uom_id
+                                                                        }
+                                                                        onChange={(
+                                                                            e,
+                                                                        ) =>
+                                                                            updateVariationComponent(
+                                                                                index,
+                                                                                cIndex,
+                                                                                'uom_id',
+                                                                                e
+                                                                                    .target
+                                                                                    .value,
+                                                                            )
+                                                                        }
+                                                                    >
+                                                                        <option
+                                                                            value=""
+                                                                            disabled
+                                                                        >
+                                                                            Ukuran
+                                                                        </option>
+                                                                        {uoms.map(
+                                                                            (
+                                                                                uom,
+                                                                            ) => (
+                                                                                <option
+                                                                                    key={
+                                                                                        uom.id
+                                                                                    }
+                                                                                    value={
+                                                                                        uom.id
+                                                                                    }
+                                                                                >
+                                                                                    {
+                                                                                        uom.code
+                                                                                    }
+                                                                                </option>
+                                                                            ),
+                                                                        )}
+                                                                    </SelectInput>
+                                                                    <InputError
+                                                                        className="mt-1"
+                                                                        message={
+                                                                            errors[
+                                                                                `variations.${index}.components.${cIndex}.uom_id`
+                                                                            ]
+                                                                        }
+                                                                    />
+                                                                </div>
+
+                                                                <DangerButton
+                                                                    type="button"
+                                                                    className="h-9 text-xs"
+                                                                    onClick={() =>
+                                                                        removeVariationComponent(
+                                                                            index,
+                                                                            cIndex,
+                                                                        )
+                                                                    }
+                                                                >
+                                                                    Hapus
+                                                                </DangerButton>
+                                                            </div>
+                                                        ),
+                                                    )}
+                                                    {variation.components
+                                                        .length === 0 && (
+                                                        <p className="text-xs text-gray-400">
+                                                            Tanpa bahan --
+                                                            variasi ini tidak
+                                                            memotong stok/HPP
+                                                            saat dijual.
+                                                        </p>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    ))}
+                                    {data.variations.length === 0 && (
+                                        <p className="text-sm text-gray-500">
+                                            Belum ada variasi. Produk ini akan
+                                            langsung masuk keranjang tanpa
+                                            pemilih variasi.
+                                        </p>
+                                    )}
+                                </div>
                             </div>
 
                             <div className="flex items-center gap-4">

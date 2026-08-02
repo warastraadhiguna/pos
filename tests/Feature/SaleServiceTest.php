@@ -4,12 +4,16 @@ namespace Tests\Feature;
 
 use App\Models\Account;
 use App\Models\CompanySetting;
+use App\Models\DiningTable;
 use App\Models\Item;
 use App\Models\Journal;
 use App\Models\JournalLine;
+use App\Models\Member;
 use App\Models\Outlet;
 use App\Models\Product;
 use App\Models\ProductComponent;
+use App\Models\ProductVariation;
+use App\Models\ProductVariationComponent;
 use App\Models\Sale;
 use App\Models\SaleLine;
 use App\Models\StockMovement;
@@ -19,6 +23,7 @@ use App\Models\Warehouse;
 use App\Services\CashAccountService;
 use App\Services\InventoryService;
 use App\Services\PostingService;
+use App\Services\ProductProfitReportService;
 use App\Services\SaleService;
 use Database\Seeders\FoundationSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -594,6 +599,662 @@ class SaleServiceTest extends TestCase
         SQL);
 
         $this->assertSame('Kopi Rename Setelah Baris Lama Ada', $line->fresh()->product_name);
+    }
+
+    /**
+     * Sale tanpa member sama sekali (kasir tidak mengisi apa pun, atau
+     * fitur member nonaktif) -- member_id dan member_name_snapshot harus
+     * dua-duanya null, supaya baris "Pelanggan: ..." di struk bisa
+     * dilewati sepenuhnya (lihat Penjualan/Receipt.jsx & Show.jsx).
+     */
+    public function test_sale_without_member_data_has_null_member_id_and_snapshot(): void
+    {
+        $product = Product::create(['name' => 'Produk Tanpa Member', 'sell_price' => 10000]);
+
+        $sale = $this->sales->createSale([
+            'outlet_id' => $this->outlet->id,
+            'warehouse_id' => $this->warehouse->id,
+            'date' => '2026-07-10',
+            'lines' => [['product_id' => $product->id, 'qty' => 1, 'unit_price' => 10000]],
+        ]);
+
+        $this->assertNull($sale->member_id);
+        $this->assertNull($sale->member_name_snapshot);
+    }
+
+    /**
+     * Kasir memilih member dari daftar (member_id dikirim, member_name
+     * tidak) -- kasus real-time web Kasir, snapshot diambil dari nama
+     * Member SAAT INI karena tidak ada jeda waktu antara pilih dan simpan.
+     */
+    public function test_sale_with_member_id_snapshots_the_members_current_name(): void
+    {
+        $member = Member::create(['name' => 'Budi Santoso']);
+        $product = Product::create(['name' => 'Produk Member', 'sell_price' => 10000]);
+
+        $sale = $this->sales->createSale([
+            'outlet_id' => $this->outlet->id,
+            'warehouse_id' => $this->warehouse->id,
+            'date' => '2026-07-10',
+            'member_id' => $member->id,
+            'lines' => [['product_id' => $product->id, 'qty' => 1, 'unit_price' => 10000]],
+        ]);
+
+        $this->assertSame($member->id, $sale->member_id);
+        $this->assertSame('Budi Santoso', $sale->member_name_snapshot);
+    }
+
+    /**
+     * Inti dari disiplin snapshot: rename member SETELAH transaksi tidak
+     * boleh mengubah nama yang sudah dibekukan di sales.member_name_snapshot
+     * -- struk lama harus tetap menampilkan nama saat transaksi terjadi.
+     */
+    public function test_renaming_a_member_after_a_sale_does_not_change_the_stored_snapshot(): void
+    {
+        $member = Member::create(['name' => 'Nama Lama']);
+        $product = Product::create(['name' => 'Produk Member', 'sell_price' => 10000]);
+
+        $sale = $this->sales->createSale([
+            'outlet_id' => $this->outlet->id,
+            'warehouse_id' => $this->warehouse->id,
+            'date' => '2026-07-10',
+            'member_id' => $member->id,
+            'lines' => [['product_id' => $product->id, 'qty' => 1, 'unit_price' => 10000]],
+        ]);
+
+        $member->update(['name' => 'Nama Baru']);
+
+        $this->assertSame('Nama Lama', $sale->fresh()->member_name_snapshot);
+        $this->assertSame($member->id, $sale->fresh()->member_id);
+        $this->assertSame('Nama Baru', $member->fresh()->name);
+    }
+
+    /**
+     * Kasus offline mobile: member_name dikirim eksplisit (nama pada momen
+     * transaksi sungguhan, disimpan lokal sebelum sync) -- ini SELALU
+     * menang atas lookup nama Member saat ini, persis pola product_name.
+     */
+    public function test_caller_supplied_member_name_overrides_the_live_lookup(): void
+    {
+        $member = Member::create(['name' => 'Nama Sekarang Di Server']);
+        $product = Product::create(['name' => 'Produk Member', 'sell_price' => 10000]);
+
+        $sale = $this->sales->createSale([
+            'outlet_id' => $this->outlet->id,
+            'warehouse_id' => $this->warehouse->id,
+            'date' => '2026-07-10',
+            'member_id' => $member->id,
+            'member_name' => 'Nama Saat Transaksi Offline',
+            'lines' => [['product_id' => $product->id, 'qty' => 1, 'unit_price' => 10000]],
+        ]);
+
+        $this->assertSame('Nama Saat Transaksi Offline', $sale->member_name_snapshot);
+        $this->assertSame($member->id, $sale->member_id);
+    }
+
+    /**
+     * Pelanggan walk-in: kasir mengetik nama bebas TANPA memilih dari
+     * daftar Member -- valid, member_id tetap null (tidak ada Member row
+     * untuk dikaitkan), tapi nama tetap tersimpan sebagai snapshot dan
+     * tetap tampil di struk.
+     */
+    public function test_free_typed_member_name_without_a_member_id_is_a_valid_walkin_customer(): void
+    {
+        $product = Product::create(['name' => 'Produk Walk-in', 'sell_price' => 10000]);
+
+        $sale = $this->sales->createSale([
+            'outlet_id' => $this->outlet->id,
+            'warehouse_id' => $this->warehouse->id,
+            'date' => '2026-07-10',
+            'member_name' => 'Pelanggan Walk-in',
+            'lines' => [['product_id' => $product->id, 'qty' => 1, 'unit_price' => 10000]],
+        ]);
+
+        $this->assertNull($sale->member_id);
+        $this->assertSame('Pelanggan Walk-in', $sale->member_name_snapshot);
+    }
+
+    /**
+     * Sale tanpa meja sama sekali (kasir tidak mengisi apa pun, atau fitur
+     * meja nonaktif) -- table_id dan table_name_snapshot harus dua-duanya
+     * null, supaya baris "Meja: ..." di struk bisa dilewati sepenuhnya
+     * (lihat Penjualan/Receipt.jsx & Show.jsx).
+     */
+    public function test_sale_without_table_data_has_null_table_id_and_snapshot(): void
+    {
+        $product = Product::create(['name' => 'Produk Tanpa Meja', 'sell_price' => 10000]);
+
+        $sale = $this->sales->createSale([
+            'outlet_id' => $this->outlet->id,
+            'warehouse_id' => $this->warehouse->id,
+            'date' => '2026-07-10',
+            'lines' => [['product_id' => $product->id, 'qty' => 1, 'unit_price' => 10000]],
+        ]);
+
+        $this->assertNull($sale->table_id);
+        $this->assertNull($sale->table_name_snapshot);
+    }
+
+    /**
+     * Kasir memilih meja dari daftar (table_id dikirim, table_name tidak)
+     * -- kasus real-time web Kasir, snapshot diambil dari nama meja SAAT
+     * INI karena tidak ada jeda waktu antara pilih dan simpan.
+     */
+    public function test_sale_with_table_id_snapshots_the_tables_current_name(): void
+    {
+        $table = DiningTable::create(['name' => 'Meja 5']);
+        $product = Product::create(['name' => 'Produk Meja', 'sell_price' => 10000]);
+
+        $sale = $this->sales->createSale([
+            'outlet_id' => $this->outlet->id,
+            'warehouse_id' => $this->warehouse->id,
+            'date' => '2026-07-10',
+            'table_id' => $table->id,
+            'lines' => [['product_id' => $product->id, 'qty' => 1, 'unit_price' => 10000]],
+        ]);
+
+        $this->assertSame($table->id, $sale->table_id);
+        $this->assertSame('Meja 5', $sale->table_name_snapshot);
+    }
+
+    /**
+     * Inti dari disiplin snapshot: rename meja SETELAH transaksi tidak
+     * boleh mengubah nama yang sudah dibekukan di sales.table_name_snapshot
+     * -- struk lama harus tetap menampilkan nama saat transaksi terjadi.
+     */
+    public function test_renaming_a_table_after_a_sale_does_not_change_the_stored_snapshot(): void
+    {
+        $table = DiningTable::create(['name' => 'Meja Lama']);
+        $product = Product::create(['name' => 'Produk Meja', 'sell_price' => 10000]);
+
+        $sale = $this->sales->createSale([
+            'outlet_id' => $this->outlet->id,
+            'warehouse_id' => $this->warehouse->id,
+            'date' => '2026-07-10',
+            'table_id' => $table->id,
+            'lines' => [['product_id' => $product->id, 'qty' => 1, 'unit_price' => 10000]],
+        ]);
+
+        $table->update(['name' => 'Meja Baru']);
+
+        $this->assertSame('Meja Lama', $sale->fresh()->table_name_snapshot);
+        $this->assertSame($table->id, $sale->fresh()->table_id);
+        $this->assertSame('Meja Baru', $table->fresh()->name);
+    }
+
+    /**
+     * Kasus offline mobile: table_name dikirim eksplisit (nama pada momen
+     * transaksi sungguhan, disimpan lokal sebelum sync) -- ini SELALU
+     * menang atas lookup nama meja saat ini, persis pola member_name.
+     */
+    public function test_caller_supplied_table_name_overrides_the_live_lookup(): void
+    {
+        $table = DiningTable::create(['name' => 'Nama Sekarang Di Server']);
+        $product = Product::create(['name' => 'Produk Meja', 'sell_price' => 10000]);
+
+        $sale = $this->sales->createSale([
+            'outlet_id' => $this->outlet->id,
+            'warehouse_id' => $this->warehouse->id,
+            'date' => '2026-07-10',
+            'table_id' => $table->id,
+            'table_name' => 'Nama Saat Transaksi Offline',
+            'lines' => [['product_id' => $product->id, 'qty' => 1, 'unit_price' => 10000]],
+        ]);
+
+        $this->assertSame('Nama Saat Transaksi Offline', $sale->table_name_snapshot);
+        $this->assertSame($table->id, $sale->table_id);
+    }
+
+    /**
+     * Meja belum terdaftar: kasir mengetik nomor meja bebas TANPA memilih
+     * dari daftar DiningTable -- valid, table_id tetap null, tapi nama
+     * tetap tersimpan sebagai snapshot dan tetap tampil di struk.
+     */
+    public function test_free_typed_table_name_without_a_table_id_is_valid(): void
+    {
+        $product = Product::create(['name' => 'Produk Meja Bebas', 'sell_price' => 10000]);
+
+        $sale = $this->sales->createSale([
+            'outlet_id' => $this->outlet->id,
+            'warehouse_id' => $this->warehouse->id,
+            'date' => '2026-07-10',
+            'table_name' => 'Meja Tambahan Di Luar',
+            'lines' => [['product_id' => $product->id, 'qty' => 1, 'unit_price' => 10000]],
+        ]);
+
+        $this->assertNull($sale->table_id);
+        $this->assertSame('Meja Tambahan Di Luar', $sale->table_name_snapshot);
+    }
+
+    /**
+     * Sale tanpa catatan sama sekali (kasir tidak mengisi apa pun, atau
+     * fitur catatan nonaktif) -- note (sale) dan note (sale_line) harus
+     * null, supaya baris "Catatan"/"→ ..." di struk bisa dilewati
+     * sepenuhnya (lihat Penjualan/Receipt.jsx & Show.jsx).
+     */
+    public function test_sale_without_note_has_null_note_on_sale_and_line(): void
+    {
+        $product = Product::create(['name' => 'Produk Tanpa Catatan', 'sell_price' => 10000]);
+
+        $sale = $this->sales->createSale([
+            'outlet_id' => $this->outlet->id,
+            'warehouse_id' => $this->warehouse->id,
+            'date' => '2026-07-10',
+            'lines' => [['product_id' => $product->id, 'qty' => 1, 'unit_price' => 10000]],
+        ]);
+
+        $this->assertNull($sale->note);
+        $this->assertNull($sale->lines->first()->note);
+    }
+
+    /**
+     * Catatan per-transaksi & per-item disimpan APA ADANYA -- beda dari
+     * member/table, tidak ada resolusi/lookup apa pun di sini (lihat
+     * docblock SaleService::createSale()).
+     */
+    public function test_sale_stores_per_sale_and_per_line_notes_as_given(): void
+    {
+        $product = Product::create(['name' => 'Es Teh', 'sell_price' => 5000]);
+
+        $sale = $this->sales->createSale([
+            'outlet_id' => $this->outlet->id,
+            'warehouse_id' => $this->warehouse->id,
+            'date' => '2026-07-10',
+            'note' => 'Antar ke meja 5',
+            'lines' => [[
+                'product_id' => $product->id,
+                'qty' => 1,
+                'unit_price' => 5000,
+                'note' => 'Es sedikit, jangan manis',
+            ]],
+        ]);
+
+        $this->assertSame('Antar ke meja 5', $sale->note);
+        $this->assertSame('Es sedikit, jangan manis', $sale->lines->first()->note);
+    }
+
+    /**
+     * Catatan kosong (string kosong/spasi) diperlakukan sama seperti tidak
+     * diisi sama sekali -- diratakan jadi NULL, bukan disimpan sebagai
+     * string kosong, supaya pemeriksaan "kalau terisi" di sisi tampilan
+     * (Receipt.jsx/Show.jsx/ReceiptFormatter) selalu bisa memakai
+     * null-check sederhana.
+     */
+    public function test_blank_notes_are_normalized_to_null(): void
+    {
+        $product = Product::create(['name' => 'Produk Catatan Kosong', 'sell_price' => 10000]);
+
+        $sale = $this->sales->createSale([
+            'outlet_id' => $this->outlet->id,
+            'warehouse_id' => $this->warehouse->id,
+            'date' => '2026-07-10',
+            'note' => '   ',
+            'lines' => [['product_id' => $product->id, 'qty' => 1, 'unit_price' => 10000, 'note' => '']],
+        ]);
+
+        $this->assertNull($sale->note);
+        $this->assertNull($sale->lines->first()->note);
+    }
+
+    /**
+     * Rename produk atau meja tidak memengaruhi catatan -- catatan berdiri
+     * sendiri, tidak terkait entitas manapun (beda dari product_name/
+     * member_name/table_name yang memang snapshot dari entitas lain).
+     * Test ini murni memastikan kolom note tetap independen & utuh di
+     * tengah operasi lain pada sale yang sama.
+     */
+    public function test_note_survives_alongside_other_snapshot_fields(): void
+    {
+        $table = DiningTable::create(['name' => 'Meja 3']);
+        $product = Product::create(['name' => 'Produk Campuran', 'sell_price' => 10000]);
+
+        $sale = $this->sales->createSale([
+            'outlet_id' => $this->outlet->id,
+            'warehouse_id' => $this->warehouse->id,
+            'date' => '2026-07-10',
+            'table_id' => $table->id,
+            'note' => 'Bungkus',
+            'lines' => [['product_id' => $product->id, 'qty' => 1, 'unit_price' => 10000, 'note' => 'Extra pedas']],
+        ]);
+
+        $table->update(['name' => 'Meja 3 Direnovasi']);
+
+        $this->assertSame('Bungkus', $sale->fresh()->note);
+        $this->assertSame('Extra pedas', $sale->lines->first()->fresh()->note);
+        $this->assertSame('Meja 3', $sale->fresh()->table_name_snapshot);
+    }
+
+    /**
+     * Baris tanpa `variations` sama sekali (produk tidak punya variasi,
+     * atau fitur nonaktif) -- sale_line_variations tetap kosong, tidak ada
+     * baris "kosong" apa pun yang dibuat.
+     */
+    public function test_sale_line_without_variations_has_no_variation_rows(): void
+    {
+        $product = Product::create(['name' => 'Kopi Tanpa Variasi', 'sell_price' => 10000]);
+
+        $sale = $this->sales->createSale([
+            'outlet_id' => $this->outlet->id,
+            'warehouse_id' => $this->warehouse->id,
+            'date' => '2026-07-31',
+            'lines' => [['product_id' => $product->id, 'qty' => 1, 'unit_price' => 10000]],
+        ]);
+
+        $this->assertSame(0, $sale->lines->first()->variations()->count());
+    }
+
+    /**
+     * Multi-variasi per baris (mis. "Es Teh + Gelas Besar + Bawa Pulang")
+     * -- satu sale_line bisa punya BEBERAPA baris sale_line_variations
+     * sekaligus, masing-masing dengan snapshot nama & harganya sendiri.
+     * unit_price yang dikirim SUDAH termasuk kedua additional_price (7000
+     * = 5000 dasar + 2000 gelas besar + 0 bawa pulang -- lihat docblock
+     * SaleService::createSale() kenapa server tidak menghitung ulang ini).
+     */
+    public function test_sale_line_stores_multiple_variations_with_snapshots(): void
+    {
+        $product = Product::create(['name' => 'Es Teh', 'sell_price' => 5000]);
+        $besar = ProductVariation::create(['product_id' => $product->id, 'name' => 'Gelas Besar', 'additional_price' => 2000]);
+        $bawaPulang = ProductVariation::create(['product_id' => $product->id, 'name' => 'Bawa Pulang', 'additional_price' => 0]);
+
+        $sale = $this->sales->createSale([
+            'outlet_id' => $this->outlet->id,
+            'warehouse_id' => $this->warehouse->id,
+            'date' => '2026-07-31',
+            'lines' => [[
+                'product_id' => $product->id,
+                'qty' => 1,
+                'unit_price' => 7000,
+                'variations' => [
+                    ['variation_id' => $besar->id],
+                    ['variation_id' => $bawaPulang->id],
+                ],
+            ]],
+        ]);
+
+        $line = $sale->lines->first();
+        $this->assertSame(2, $line->variations()->count());
+        $this->assertSame(0, bccomp($line->line_total, '7000', 4), 'line_total memakai unit_price apa adanya, sudah termasuk variasi.');
+
+        $names = $line->variations()->pluck('name_snapshot')->sort()->values()->all();
+        $this->assertSame(['Bawa Pulang', 'Gelas Besar'], $names);
+
+        $besarSnapshot = $line->variations()->where('variation_id', $besar->id)->firstOrFail();
+        $this->assertSame(0, bccomp($besarSnapshot->price_snapshot, '2000', 4));
+        // Tahap 1: HPP variasi SELALU 0 -- lihat docblock migrasi
+        // sale_line_variations untuk bagaimana Tahap 2 mengisi ini nanti.
+        $this->assertSame(0, bccomp($besarSnapshot->hpp_snapshot, '0', 4));
+    }
+
+    /**
+     * Inti dari disiplin snapshot: rename ATAU ubah harga variasi SETELAH
+     * transaksi tidak boleh mengubah name_snapshot/price_snapshot yang
+     * sudah dibekukan -- nota lama harus tetap benar.
+     */
+    public function test_renaming_or_repricing_a_variation_after_a_sale_does_not_change_the_stored_snapshot(): void
+    {
+        $product = Product::create(['name' => 'Es Teh', 'sell_price' => 5000]);
+        $variation = ProductVariation::create(['product_id' => $product->id, 'name' => 'Gelas Besar', 'additional_price' => 2000]);
+
+        $sale = $this->sales->createSale([
+            'outlet_id' => $this->outlet->id,
+            'warehouse_id' => $this->warehouse->id,
+            'date' => '2026-07-31',
+            'lines' => [[
+                'product_id' => $product->id,
+                'qty' => 1,
+                'unit_price' => 7000,
+                'variations' => [['variation_id' => $variation->id]],
+            ]],
+        ]);
+
+        $variation->update(['name' => 'Gelas Jumbo', 'additional_price' => 5000]);
+
+        $snapshot = $sale->lines->first()->variations()->firstOrFail();
+        $this->assertSame('Gelas Besar', $snapshot->name_snapshot);
+        $this->assertSame(0, bccomp($snapshot->price_snapshot, '2000', 4));
+        $this->assertSame('Gelas Jumbo', $variation->fresh()->name);
+    }
+
+    /**
+     * Kasus offline mobile: name/price dikirim eksplisit (nilai pada momen
+     * transaksi sungguhan, disimpan lokal sebelum sync) -- SELALU menang
+     * atas lookup nilai ProductVariation saat ini, persis pola
+     * member_name/table_name.
+     */
+    public function test_caller_supplied_variation_name_and_price_override_the_live_lookup(): void
+    {
+        $product = Product::create(['name' => 'Es Teh', 'sell_price' => 5000]);
+        $variation = ProductVariation::create(['product_id' => $product->id, 'name' => 'Nama Sekarang Di Server', 'additional_price' => 2000]);
+
+        $sale = $this->sales->createSale([
+            'outlet_id' => $this->outlet->id,
+            'warehouse_id' => $this->warehouse->id,
+            'date' => '2026-07-31',
+            'lines' => [[
+                'product_id' => $product->id,
+                'qty' => 1,
+                'unit_price' => 6500,
+                'variations' => [[
+                    'variation_id' => $variation->id,
+                    'name' => 'Nama Saat Transaksi Offline',
+                    'price' => 1500,
+                ]],
+            ]],
+        ]);
+
+        $snapshot = $sale->lines->first()->variations()->firstOrFail();
+        $this->assertSame('Nama Saat Transaksi Offline', $snapshot->name_snapshot);
+        $this->assertSame(0, bccomp($snapshot->price_snapshot, '1500', 4));
+    }
+
+    /**
+     * Variasi yang diklaim TIDAK MILIK produk baris ini harus ditolak --
+     * mencegah baris "salah tempel" variasi produk lain. findOrFail() di
+     * dalam createSaleLineVariations() (di-scope ke product_id) yang
+     * menegakkan ini.
+     */
+    public function test_a_variation_belonging_to_a_different_product_is_rejected(): void
+    {
+        $product = Product::create(['name' => 'Es Teh', 'sell_price' => 5000]);
+        $otherProduct = Product::create(['name' => 'Kopi', 'sell_price' => 8000]);
+        $wrongVariation = ProductVariation::create(['product_id' => $otherProduct->id, 'name' => 'Extra Shot', 'additional_price' => 3000]);
+
+        $this->expectException(\Illuminate\Database\Eloquent\ModelNotFoundException::class);
+
+        $this->sales->createSale([
+            'outlet_id' => $this->outlet->id,
+            'warehouse_id' => $this->warehouse->id,
+            'date' => '2026-07-31',
+            'lines' => [[
+                'product_id' => $product->id,
+                'qty' => 1,
+                'unit_price' => 8000,
+                'variations' => [['variation_id' => $wrongVariation->id]],
+            ]],
+        ]);
+    }
+
+    /**
+     * Tahap 1: variasi belum bisa mengonsumsi BOM apa pun. hpp_total pada
+     * sale_line HARUS tetap murni dari komponen PRODUK saja (identik
+     * sebelum fitur variasi ada) walau baris ini juga punya variasi
+     * terpilih -- membuktikan loop HPP produk (createSaleLine) sama sekali
+     * tidak tersentuh oleh keberadaan variasi.
+     */
+    public function test_hpp_total_is_unaffected_by_variations_in_tahap_1(): void
+    {
+        $kopi = $this->makeStockedItem('KOPI-VAR', 'Kopi Sachet', $this->pcs);
+        $this->inventory->recordInbound($kopi, $this->warehouse, 100, 1500, $this->makeOpeningBalanceSource(), '2026-07-01');
+
+        $product = Product::create(['name' => 'Kopi Seduh', 'sell_price' => 10000]);
+        ProductComponent::create(['product_id' => $product->id, 'item_id' => $kopi->id, 'qty' => 1, 'uom_id' => $this->pcs->id]);
+        $variation = ProductVariation::create(['product_id' => $product->id, 'name' => 'Extra Shot', 'additional_price' => 3000]);
+
+        $sale = $this->sales->createSale([
+            'outlet_id' => $this->outlet->id,
+            'warehouse_id' => $this->warehouse->id,
+            'date' => '2026-07-31',
+            'lines' => [[
+                'product_id' => $product->id,
+                'qty' => 1,
+                'unit_price' => 13000,
+                'variations' => [['variation_id' => $variation->id]],
+            ]],
+        ]);
+
+        $line = $sale->lines->first();
+        // 1 unit kopi @1500 = 1500, SAMA seperti tanpa variasi sama sekali.
+        $this->assertSame(0, bccomp($line->hpp_total, '1500', 4));
+        $this->assertSame(0, bccomp($line->variations()->firstOrFail()->hpp_snapshot, '0', 4));
+    }
+
+    /**
+     * Variasi Berbayar Tahap 2 -- rekonsiliasi dibuktikan dengan ANGKA
+     * NYATA (bukan cuma "lulus"), mencakup poin (b)/(c)/(d)/(e)/(a) yang
+     * diminta eksplisit. Skenario CAMPUR sengaja: satu variasi berbahan
+     * (Bawa Pulang -> 1x Gelas Plastik) DAN satu variasi tanpa BOM sama
+     * sekali (Ekstra Manis) dipilih SEKALIGUS di baris yang sama, produk
+     * itu sendiri JUGA punya BOM sendiri (Es Batu) -- membuktikan ketiga
+     * sumber HPP (produk, variasi berbahan, variasi tanpa bahan) berjalan
+     * benar bersamaan, bukan hanya diuji terpisah-pisah.
+     */
+    public function test_variation_with_bom_deducts_stock_computes_hpp_and_reconciles_with_journal_and_profit_report(): void
+    {
+        $esBatu = $this->makeStockedItem('ES-BATU', 'Es Batu', $this->pcs);
+        $gelasPlastik = $this->makeStockedItem('GELAS-PLASTIK', 'Gelas Plastik', $this->pcs);
+        $openingBalanceSource = $this->makeOpeningBalanceSource();
+        $this->inventory->recordInbound($esBatu, $this->warehouse, 100, 200, $openingBalanceSource, '2026-08-01');
+        $this->inventory->recordInbound($gelasPlastik, $this->warehouse, 50, 300, $openingBalanceSource, '2026-08-01');
+
+        // Produk PUNYA BOM sendiri (Es Batu) -- terpisah dari BOM variasi,
+        // supaya hpp_total gabungan (poin d) benar-benar teruji sebagai
+        // JUMLAH dua sumber berbeda, bukan kebetulan salah satunya nol.
+        $product = Product::create(['name' => 'Es Teh', 'sell_price' => 8000]);
+        ProductComponent::create(['product_id' => $product->id, 'item_id' => $esBatu->id, 'qty' => 2, 'uom_id' => $this->pcs->id]);
+
+        $bawaPulang = ProductVariation::create(['product_id' => $product->id, 'name' => 'Bawa Pulang', 'additional_price' => 1000]);
+        ProductVariationComponent::create(['variation_id' => $bawaPulang->id, 'item_id' => $gelasPlastik->id, 'qty' => 1, 'uom_id' => $this->pcs->id]);
+
+        // (e) variasi TANPA BOM sama sekali -- HPP-nya harus 0, dipilih
+        // BERSAMAAN dengan variasi berbahan di baris yang sama (campur).
+        $ekstraManis = ProductVariation::create(['product_id' => $product->id, 'name' => 'Ekstra Manis', 'additional_price' => 500]);
+
+        $sale = $this->sales->createSale([
+            'outlet_id' => $this->outlet->id,
+            'warehouse_id' => $this->warehouse->id,
+            'date' => '2026-08-02',
+            'payment_method' => 'cash',
+            'lines' => [[
+                'product_id' => $product->id,
+                'qty' => 3,
+                'unit_price' => 9500, // 8000 + 1000 + 500
+                'variations' => [
+                    ['variation_id' => $bawaPulang->id],
+                    ['variation_id' => $ekstraManis->id],
+                ],
+            ]],
+        ]);
+
+        // (b) stok item bahan berkurang TEPAT sesuai BOM x qty -- komponen
+        // PRODUK (es batu) dan komponen VARIASI (gelas plastik) terpisah.
+        $this->assertSame(0, bccomp($this->inventory->currentStock($esBatu, $this->warehouse), '94', 4)); // 100 - (2 x 3)
+        $this->assertSame(0, bccomp($this->inventory->currentStock($gelasPlastik, $this->warehouse), '47', 4)); // 50 - (1 x 3)
+
+        $line = $sale->lines->first();
+        $lineVariations = $line->variations()->get()->keyBy('variation_id');
+
+        // (d) hpp_total = HPP produk + HPP variasi, dari Moving Average
+        // yang SUDAH BENAR (bukan direcompute ulang):
+        //   produk:  2 es batu/unit x 3 unit x 200 = 1200
+        //   variasi Bawa Pulang: 1 gelas/unit x 3 unit x 300 = 900
+        //   variasi Ekstra Manis: tanpa BOM = 0            [poin (e)]
+        $this->assertSame(0, bccomp($lineVariations[$bawaPulang->id]->hpp_snapshot, '900', 4));
+        $this->assertSame(0, bccomp($lineVariations[$ekstraManis->id]->hpp_snapshot, '0', 4));
+        $this->assertSame(0, bccomp($line->hpp_total, '2100', 4)); // 1200 + 900 + 0
+
+        // (c) jurnal seimbang, satu posting gabungan (tidak ada baris HPP
+        // terpisah per variasi).
+        $journal = Journal::where('source_type', Sale::class)->where('source_id', $sale->id)->firstOrFail();
+        $this->assertJournalBalanced($journal);
+
+        $journalLines = $journal->lines()->with('account')->get()->keyBy(fn (JournalLine $l) => $l->account->code);
+        $this->assertSame(0, bccomp($journalLines['5-1000']->debit, '2100', 4));
+        $this->assertSame(0, bccomp($journalLines['1-1200']->credit, '2100', 4));
+        // Produk tidak punya tax_rate_id -> tidak kena PPN sama sekali --
+        // tidak ada baris 2-1100 di jurnal ini.
+        $this->assertArrayNotHasKey('2-1100', $journalLines->all());
+        $this->assertSame(0, bccomp($journalLines['1-1000']->debit, '28500', 4)); // 3 x 9500
+        $this->assertSame(0, bccomp($journalLines['4-1000']->credit, '28500', 4));
+
+        // (a) rekonsiliasi eksplisit dengan ANGKA NYATA yang SAMA di tiga
+        // tempat berbeda: HPP laporan laba = HPP jurnal (5-1000) =
+        // hpp_total tersimpan di sale_lines -- 2100 di ketiganya, bukan
+        // cuma tiga assertion yang kebetulan sama-sama lulus.
+        $report = (new ProductProfitReportService())->productProfitReport('2026-08-02', '2026-08-02');
+        $byProduct = collect($report['by_product'])->keyBy('product_id');
+        $this->assertSame(0, bccomp($byProduct[$product->id]['hpp'], '2100', 4));
+        $this->assertSame(0, bccomp($byProduct[$product->id]['hpp'], (string) $line->hpp_total, 4));
+        $this->assertSame(0, bccomp($byProduct[$product->id]['hpp'], (string) $journalLines['5-1000']->debit, 4));
+        $this->assertSame(0, bccomp($byProduct[$product->id]['net'], '28500', 4));
+        $this->assertSame(0, bccomp($byProduct[$product->id]['gross_profit'], '26400', 4)); // 28500 - 2100
+    }
+
+    /**
+     * (g) Transaksi Tahap 1 LAMA (dibuat sebelum `product_variation_components`
+     * ada sama sekali -- `hpp_snapshot`/`hpp_total` dibekukan sebagai '0'
+     * murni angka historis) tetap valid setelah kode Tahap 2 di-deploy.
+     * Dibangun langsung lewat Eloquent (BUKAN lewat SaleService), sengaja
+     * TIDAK melewati consumeSaleLineVariations() sama sekali -- persis
+     * merepresentasikan baris yang sudah tersimpan sebelum method itu
+     * pernah ada, bukan jalur baru yang kebetulan menghasilkan nilai sama.
+     */
+    public function test_pre_tahap_2_sale_line_variation_rows_remain_valid_and_unrecomputed(): void
+    {
+        $product = Product::create(['name' => 'Kopi Legacy', 'sell_price' => 10000]);
+        $variation = ProductVariation::create(['product_id' => $product->id, 'name' => 'Extra Shot Legacy', 'additional_price' => 3000]);
+
+        $sale = Sale::create([
+            'outlet_id' => $this->outlet->id,
+            'warehouse_id' => $this->warehouse->id,
+            'local_uuid' => (string) Str::uuid(),
+            'date' => '2026-07-01',
+            'occurred_at' => '2026-07-01 10:00:00',
+            'payment_method' => 'cash',
+            'status' => 'completed',
+            'subtotal' => '13000',
+            'tax_total' => '0',
+            'grand_total' => '13000',
+            'cash_received' => '13000',
+            'change_amount' => '0',
+        ]);
+        $line = $sale->lines()->create([
+            'product_id' => $product->id,
+            'product_name' => $product->name,
+            'qty' => 1,
+            'unit_price' => 13000,
+            'line_total' => 13000,
+            'hpp_total' => '0',
+        ]);
+        $line->variations()->create([
+            'variation_id' => $variation->id,
+            'name_snapshot' => $variation->name,
+            'price_snapshot' => $variation->additional_price,
+            'hpp_snapshot' => '0',
+        ]);
+
+        // Baris ini tetap terbaca utuh -- tidak ada kode Tahap 2 manapun
+        // yang memanggil ulang consumeSaleLineVariations() terhadap data
+        // yang sudah ada, jadi nilainya TIDAK PERNAH direcompute.
+        $reloaded = Sale::with('lines.variations')->findOrFail($sale->id);
+        $this->assertSame(0, bccomp($reloaded->lines->first()->hpp_total, '0', 4));
+        $this->assertSame(0, bccomp($reloaded->lines->first()->variations->first()->hpp_snapshot, '0', 4));
+
+        // Laporan laba tetap membaca hpp_total APA ADANYA, tanpa error.
+        $report = (new ProductProfitReportService())->productProfitReport('2026-07-01', '2026-07-01');
+        $byProduct = collect($report['by_product'])->keyBy('product_id');
+        $this->assertSame(0, bccomp($byProduct[$product->id]['hpp'], '0', 4));
+        $this->assertSame(0, bccomp($byProduct[$product->id]['net'], '13000', 4));
     }
 
     private function assertJournalBalanced(Journal $journal): void

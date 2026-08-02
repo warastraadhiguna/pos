@@ -128,4 +128,80 @@ class InventoryServiceConcurrencyTest extends ConcurrencyTestCase
         $this->assertSame(0, bccomp($this->inventory->currentStock($this->item, $this->warehouse), '150', 4));
         $this->assertSame(0, bccomp($this->inventory->currentAverageCost($this->item, $this->warehouse), '1333.3333', 4));
     }
+
+    /**
+     * OUTBOUND counterpart of the inbound test above — this is the EXACT
+     * primitive Variasi Berbayar Tahap 2 relies on
+     * (SaleService::consumeSaleLineVariations() calls recordOutbound() to
+     * consume a variation's BOM component, PERSIS the same call product BOM
+     * consumption already makes a few lines above it). Proving this
+     * primitive serializes two genuinely concurrent callers correctly is
+     * what proves variation stock consumption is concurrency-safe, without
+     * building or testing a second locking mechanism — Tahap 2 introduces
+     * none.
+     */
+    public function test_two_concurrent_outbounds_on_the_same_item_serialize_without_a_lost_update(): void
+    {
+        $date = '2026-07-04';
+        $holdSeconds = 3;
+
+        // Stok awal 200 @ 500 -- ditulis di proses UTAMA, TERKOMIT sebelum
+        // subprocess A dimulai, supaya A benar-benar membaca stok ini
+        // (bukan stok kosong) saat dia mengunci ledger duluan.
+        $this->inventory->recordInbound($this->item, $this->warehouse, 200, 500, $this->outlet, $date);
+
+        // Proses A ("pemegang lock") -- subprocess OS sungguhan, keluarkan
+        // 30 unit, lalu tahan row lock 3 detik sebelum commit.
+        $processA = $this->spawnArtisan([
+            'concurrency-test:hold-inventory-outbound',
+            (string) $this->item->id,
+            (string) $this->warehouse->id,
+            '30',
+            Outlet::class,
+            (string) $this->outlet->id,
+            $date,
+            (string) $holdSeconds,
+        ]);
+
+        $this->waitForMarker($processA, 'LOCK_HELD');
+
+        // Proses B ("penunggu") -- proses test utama ini sendiri, keluarkan
+        // 20 unit. Wajib ter-block sampai A commit, karena mengunci baris
+        // Item/stock_movement yang sama persis (lockLedger()).
+        $start = microtime(true);
+        $hppB = $this->inventory->recordOutbound($this->item, $this->warehouse, 20, $this->outlet, $date);
+        $elapsed = microtime(true) - $start;
+
+        $result = $processA->wait();
+        $this->assertTrue($result->successful(), 'Subprocess A gagal: '.$result->errorOutput());
+
+        // Bukti #1: B benar-benar menunggu.
+        $this->assertGreaterThanOrEqual(
+            $holdSeconds - 1,
+            $elapsed,
+            'recordOutbound() di proses B seharusnya ter-block oleh lock yang dipegang proses A.',
+        );
+
+        // Bukti #2: tidak ada movement yang hilang -- 1 inbound (stok awal)
+        // + 2 outbound (A dan B).
+        $movements = StockMovement::where('item_id', $this->item->id)->orderBy('id')->get();
+        $this->assertCount(3, $movements);
+
+        // Bukti #3: hasil akhir benar seolah dieksekusi berurutan -- BUKAN
+        // salah satu outbound menimpa hasil baca yang lain (lost update
+        // akan menyisakan running_qty 170 ATAU 180, bukan 150 yang benar).
+        // average_cost TIDAK berubah oleh outbound (lihat docblock
+        // InventoryService::recordOutbound()) -- tetap 500 di movement
+        // manapun.
+        $this->assertSame(0, bccomp($movements[1]->running_qty, '170', 4));
+        $this->assertSame(0, bccomp($movements[1]->running_average_cost, '500', 4));
+        $this->assertSame(0, bccomp($movements[2]->running_qty, '150', 4));
+        $this->assertSame(0, bccomp($movements[2]->running_average_cost, '500', 4));
+
+        // Bukti #4: HPP proses B dihitung dari average cost yang benar
+        // (500), bukan angka pra-lock yang stale.
+        $this->assertSame(0, bccomp($hppB, '10000', 4));
+
+        $this->assertSame(0, bccomp($this->inventory->currentStock($this->item, $this->warehouse), '150', 4));
+    }
 }

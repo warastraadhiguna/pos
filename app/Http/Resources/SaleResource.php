@@ -23,6 +23,11 @@ class SaleResource extends JsonResource
             'change_amount' => $this->change_amount,
             'created_by_user_id' => $this->created_by_user_id,
             'device_label' => $this->device_label,
+            'member_id' => $this->member_id,
+            'member_name_snapshot' => $this->member_name_snapshot,
+            'table_id' => $this->table_id,
+            'table_name_snapshot' => $this->table_name_snapshot,
+            'note' => $this->note,
             'lines' => SaleLineResource::collection($this->whenLoaded('lines')),
         ];
     }

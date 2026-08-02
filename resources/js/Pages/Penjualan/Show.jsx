@@ -74,7 +74,31 @@ export default function Show({ sale }) {
                                     {statusLabel[sale.status] ?? sale.status}
                                 </div>
                             </div>
+                            {sale.member_name_snapshot && (
+                                <div>
+                                    <div className="text-gray-500">Pelanggan</div>
+                                    <div className="font-medium text-gray-900">
+                                        {sale.member_name_snapshot}
+                                    </div>
+                                </div>
+                            )}
+                            {sale.table_name_snapshot && (
+                                <div>
+                                    <div className="text-gray-500">Meja</div>
+                                    <div className="font-medium text-gray-900">
+                                        {sale.table_name_snapshot}
+                                    </div>
+                                </div>
+                            )}
                         </div>
+                        {sale.note && (
+                            <div className="mt-4 border-t border-gray-200 pt-4 text-sm">
+                                <div className="text-gray-500">Catatan</div>
+                                <div className="font-medium text-gray-900">
+                                    {sale.note}
+                                </div>
+                            </div>
+                        )}
                     </div>
 
                     <div className="overflow-hidden bg-white shadow-sm sm:rounded-lg">
@@ -100,6 +124,20 @@ export default function Show({ sale }) {
                                     <tr key={line.id}>
                                         <td className="whitespace-nowrap px-6 py-4 text-sm font-medium text-gray-900">
                                             {line.product_name ?? line.product.name}
+                                            {line.variations?.map((variation) => (
+                                                <div
+                                                    key={variation.id}
+                                                    className="text-xs font-normal text-gray-500"
+                                                >
+                                                    + {variation.name_snapshot} (+
+                                                    {formatRupiah(variation.price_snapshot)})
+                                                </div>
+                                            ))}
+                                            {line.note && (
+                                                <div className="text-xs font-normal italic text-gray-500">
+                                                    → {line.note}
+                                                </div>
+                                            )}
                                         </td>
                                         <td className="whitespace-nowrap px-6 py-4 text-sm text-gray-600">
                                             {formatDecimalID(line.qty)}

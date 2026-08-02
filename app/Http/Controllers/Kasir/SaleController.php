@@ -4,6 +4,8 @@ namespace App\Http\Controllers\Kasir;
 
 use App\Http\Controllers\Controller;
 use App\Models\CompanySetting;
+use App\Models\DiningTable;
+use App\Models\NoteTemplate;
 use App\Models\Outlet;
 use App\Models\Product;
 use App\Models\Warehouse;
@@ -31,10 +33,14 @@ class SaleController extends Controller
 
         // Komponen BOM cuma perlu dimuat kalau stok memang ditampilkan --
         // query producibleQtyForProducts() tetap murah (satu batch query),
-        // tapi tidak ada gunanya kalau togglenya mati.
+        // tapi tidak ada gunanya kalau togglenya mati. Variasi (Tahap 1)
+        // SELALU dimuat sama seperti taxRate -- ringan (satu-dua baris per
+        // produk) dan dibutuhkan tombol produk untuk tahu apakah harus
+        // membuka pemilih variasi saat di-tap, terlepas dari
+        // variation_enabled (yang menggerbangi TAMPILANnya di Kasir/Index.jsx).
         $products = $setting->show_stock_on_button
-            ? Product::with(['taxRate', 'components.item', 'components.uom'])->where('is_active', true)->orderBy('name')->get()
-            : Product::with('taxRate')->where('is_active', true)->orderBy('name')->get();
+            ? Product::with(['taxRate', 'components.item', 'components.uom', 'variations'])->where('is_active', true)->orderBy('name')->get()
+            : Product::with(['taxRate', 'variations'])->where('is_active', true)->orderBy('name')->get();
 
         $productStock = null;
         if ($setting->show_stock_on_button) {
@@ -55,6 +61,21 @@ class SaleController extends Controller
             'showProductImage' => $setting->show_product_image,
             'paymentQuickAmounts' => $setting->payment_quick_amounts,
             'cashAccounts' => $this->cashAccounts->selectableCashAccounts(),
+            'memberEnabled' => $setting->member_enabled,
+            'tableEnabled' => $setting->table_enabled,
+            // Meja dipilih dari daftar SAJA (bukan ketik bebas seperti
+            // Member) -- jumlah meja tetap/terbatas, jadi dropdown penuh
+            // lebih aman daripada risiko salah ketik. Selalu dimuat (murah,
+            // satu query kecil) sama seperti cashAccounts di atas, bukan
+            // cuma saat tableEnabled aktif -- kalau admin baru menyalakan
+            // togglenya, daftar sudah siap tanpa reload halaman.
+            'tables' => DiningTable::where('is_active', true)->orderBy('name')->get(['id', 'name']),
+            'noteEnabled' => $setting->note_enabled,
+            // Sama alasan `tables` di atas -- selalu dimuat (murah), bukan
+            // cuma saat noteEnabled aktif, supaya siap tanpa reload halaman
+            // begitu admin baru menyalakan togglenya.
+            'noteTemplates' => NoteTemplate::where('is_active', true)->orderBy('text')->get(['id', 'text']),
+            'variationEnabled' => $setting->variation_enabled,
         ]);
     }
 
@@ -71,11 +92,35 @@ class SaleController extends Controller
             'cash_received' => ['required', 'numeric', 'min:0'],
             'change_amount' => ['required', 'numeric', 'min:0'],
             'cash_account_code' => ['nullable', 'string', 'max:20'],
+            // Keduanya opsional & independen -- lihat docblock
+            // SaleService::createSale(). member_id datang dari kasir yang
+            // memilih dari MemberCombobox; member_name bisa isi bebas
+            // (pelanggan walk-in tanpa dipilih dari daftar) atau dikosongkan
+            // sepenuhnya kalau fitur member nonaktif / kasir tidak mengisi apa pun.
+            'member_id' => ['nullable', 'exists:members,id'],
+            'member_name' => ['nullable', 'string', 'max:255'],
+            // Sama pola member_id/member_name di atas -- lihat docblock
+            // SaleService::createSale().
+            'table_id' => ['nullable', 'exists:tables,id'],
+            'table_name' => ['nullable', 'string', 'max:255'],
+            // Catatan per-transaksi & per-item -- keduanya teks bebas apa
+            // adanya, lihat docblock SaleService::createSale().
+            'note' => ['nullable', 'string', 'max:2000'],
             'lines' => ['required', 'array', 'min:1'],
             'lines.*.product_id' => ['required', 'exists:products,id'],
             'lines.*.product_name' => ['nullable', 'string', 'max:255'],
             'lines.*.qty' => ['required', 'numeric', 'min:0.0001'],
             'lines.*.unit_price' => ['required', 'numeric', 'min:0'],
+            'lines.*.note' => ['nullable', 'string', 'max:2000'],
+            // Variasi Berbayar (Tahap 1, harga-saja) -- lihat docblock
+            // SaleService::createSale(). unit_price di atas SUDAH termasuk
+            // additional_price tiap variasi terpilih (dihitung klien);
+            // array ini murni rincian snapshot untuk nota, tidak memengaruhi
+            // perhitungan harga sama sekali.
+            'lines.*.variations' => ['array'],
+            'lines.*.variations.*.variation_id' => ['required', 'exists:product_variations,id'],
+            'lines.*.variations.*.name' => ['nullable', 'string', 'max:255'],
+            'lines.*.variations.*.price' => ['nullable', 'numeric', 'min:0'],
         ]);
 
         // Satu outlet untuk sekarang (lihat docs/ROADMAP.md) — begitu multi-outlet
@@ -93,6 +138,11 @@ class SaleController extends Controller
                 'cash_received' => $validated['cash_received'],
                 'change_amount' => $validated['change_amount'],
                 'cash_account_code' => $validated['cash_account_code'] ?? CashAccountService::DEFAULT_CODE,
+                'member_id' => $validated['member_id'] ?? null,
+                'member_name' => $validated['member_name'] ?? null,
+                'table_id' => $validated['table_id'] ?? null,
+                'table_name' => $validated['table_name'] ?? null,
+                'note' => $validated['note'] ?? null,
                 'lines' => $validated['lines'],
             ]);
         } catch (Throwable $e) {

@@ -33,6 +33,9 @@ const icons = {
     expand: 'M13 5l7 7-7 7M5 5l7 7-7 7',
     stok: 'M3 3h18v4H3V3zm1 4h16v13a1 1 0 01-1 1H5a1 1 0 01-1-1V7zm4 4h8',
     beban: 'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2M9 9h6M9 13h6M9 17h4',
+    meja: 'M4 4h16v2H4V4zM6 6v14M10 6v14M14 6v14M18 6v14',
+    catatan:
+        'M9 3h6l4 4v11a2 2 0 01-2 2H9a2 2 0 01-2-2V5a2 2 0 012-2zM9 9h6M9 13h6M9 17h3',
 };
 
 const navGroups = [
@@ -241,6 +244,9 @@ const navGroups = [
                 ],
             },
             { name: 'Supplier', href: 'master.suppliers.index', match: 'master.suppliers.*', icon: icons.supplier, permission: 'master-data.manage' },
+            { name: 'Member', href: 'master.members.index', match: 'master.members.*', icon: icons.pengguna, permission: 'master-data.manage' },
+            { name: 'Meja', href: 'master.tables.index', match: 'master.tables.*', icon: icons.meja, permission: 'master-data.manage' },
+            { name: 'Template Catatan', href: 'master.note-templates.index', match: 'master.note-templates.*', icon: icons.catatan, permission: 'master-data.manage' },
             { name: 'Ukuran', href: 'master.uoms.index', match: 'master.uoms.*', icon: icons.ukuran, permission: 'master-data.manage' },
         ],
     },

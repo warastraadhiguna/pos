@@ -49,6 +49,38 @@ class ProductController extends Controller
      * endpoint terpisah. BEDA dari stok itu sendiri (lihat stock() di
      * bawah) yang berubah setiap transaksi dan sengaja endpoint TERPISAH
      * non-incremental.
+     *
+     * `meta.member_enabled` adalah saklar fitur Member/Pelanggan — mobile
+     * client HARUS memeriksa ini sebelum menarik data member (lihat
+     * Api\MemberController) atau menampilkan field pelanggan di checkout:
+     * kalau false, jangan sync member sama sekali (data pelanggan berisi
+     * PII/no. HP yang tidak perlu ada di device kalau fiturnya memang tidak
+     * dipakai toko itu), dan jangan tampilkan field pelanggan di mana pun.
+     *
+     * `meta.table_enabled` adalah saklar fitur Nomor Meja — pola identik
+     * `member_enabled` di atas: mobile client HARUS memeriksa ini sebelum
+     * menarik data meja (lihat Api\TableController) atau menampilkan field
+     * meja di checkout.
+     *
+     * `meta.note_enabled` adalah saklar fitur Catatan + Template — pola
+     * identik `member_enabled`/`table_enabled` di atas: mobile client
+     * HARUS memeriksa ini sebelum menarik template catatan (lihat
+     * Api\NoteTemplateController) atau menampilkan field catatan di
+     * checkout/keranjang.
+     *
+     * `meta.variation_enabled` adalah saklar fitur Variasi Berbayar
+     * (Tahap 1, harga-saja) — BEDA dari member_enabled/table_enabled/
+     * note_enabled: data variasi (`variations` di setiap produk, lihat
+     * ProductResource) SELALU ikut sync terlepas dari saklar ini, sama
+     * seperti `components` (BOM) selalu ikut — yang digerbangi cuma
+     * tampilan pemilih variasi di checkout mobile.
+     *
+     * `meta.draft_enabled` adalah saklar fitur Draft — BEDA dari SEMUA
+     * saklar lain di atas: draft murni fitur LOKAL di SQLite mobile,
+     * server tidak pernah menyimpan/memproses draft apa pun sama sekali.
+     * Kolom ini ditumpangkan di sini (bukan endpoint baru) semata supaya
+     * HP tahu status saklarnya lewat jalur sync yang SUDAH ADA, pola sama
+     * kolom saklar lain — bukan karena draft "milik" data produk.
      */
     public function index(Request $request): AnonymousResourceCollection
     {
@@ -56,7 +88,7 @@ class ProductController extends Controller
         $syncedAt = SyncWatermark::now();
 
         $products = SyncWatermark::applyIncrementalFilter(
-            Product::with(['taxRate', 'productCategory', 'components.uom']),
+            Product::with(['taxRate', 'productCategory', 'components.uom', 'variations']),
             $validated['updated_since'] ?? null,
         )->orderBy('id')->get();
 
@@ -75,6 +107,11 @@ class ProductController extends Controller
                 'show_product_image' => $setting->show_product_image,
                 'payment_quick_amounts' => $setting->payment_quick_amounts,
                 'mobile_print_receipt' => $setting->mobile_print_receipt,
+                'member_enabled' => $setting->member_enabled,
+                'table_enabled' => $setting->table_enabled,
+                'note_enabled' => $setting->note_enabled,
+                'variation_enabled' => $setting->variation_enabled,
+                'draft_enabled' => $setting->draft_enabled,
             ]]);
     }
 

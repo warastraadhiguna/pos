@@ -13,6 +13,11 @@ use Illuminate\Database\Eloquent\Relations\MorphTo;
     'outlet_id',
     'warehouse_id',
     'created_by_user_id',
+    'member_id',
+    'member_name_snapshot',
+    'table_id',
+    'table_name_snapshot',
+    'note',
     'date',
     'occurred_at',
     'local_uuid',
@@ -65,6 +70,16 @@ class Sale extends Model
     public function createdByUser(): BelongsTo
     {
         return $this->belongsTo(User::class, 'created_by_user_id');
+    }
+
+    public function member(): BelongsTo
+    {
+        return $this->belongsTo(Member::class);
+    }
+
+    public function table(): BelongsTo
+    {
+        return $this->belongsTo(DiningTable::class, 'table_id');
     }
 
     public function lines(): HasMany

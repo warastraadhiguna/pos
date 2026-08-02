@@ -29,6 +29,11 @@ export default function Index({
     showProductImage,
     paymentQuickAmounts,
     mobilePrintReceipt,
+    memberEnabled,
+    tableEnabled,
+    noteEnabled,
+    variationEnabled,
+    draftEnabled,
     logs,
 }) {
     const [confirming, setConfirming] = useState(false);
@@ -51,6 +56,21 @@ export default function Index({
 
     const [printReceipt, setPrintReceipt] = useState(mobilePrintReceipt);
     const [savingPrintReceipt, setSavingPrintReceipt] = useState(false);
+
+    const [memberOn, setMemberOn] = useState(memberEnabled);
+    const [savingMemberEnabled, setSavingMemberEnabled] = useState(false);
+
+    const [tableOn, setTableOn] = useState(tableEnabled);
+    const [savingTableEnabled, setSavingTableEnabled] = useState(false);
+
+    const [noteOn, setNoteOn] = useState(noteEnabled);
+    const [savingNoteEnabled, setSavingNoteEnabled] = useState(false);
+
+    const [variationOn, setVariationOn] = useState(variationEnabled);
+    const [savingVariationEnabled, setSavingVariationEnabled] = useState(false);
+
+    const [draftOn, setDraftOn] = useState(draftEnabled);
+    const [savingDraftEnabled, setSavingDraftEnabled] = useState(false);
 
     // String (bukan number) di state INPUT supaya kolom bisa dikosongkan
     // sementara saat diketik ulang tanpa langsung jadi "0" -- dikonversi
@@ -182,6 +202,86 @@ export default function Index({
                 preserveScroll: true,
                 onError: () => setPrintReceipt(previous),
                 onFinish: () => setSavingPrintReceipt(false),
+            },
+        );
+    };
+
+    const submitMemberEnabled = (checked) => {
+        if (savingMemberEnabled) return;
+        const previous = memberOn;
+        setMemberOn(checked);
+        setSavingMemberEnabled(true);
+        router.put(
+            route('pengaturan.member.update'),
+            { member_enabled: checked },
+            {
+                preserveScroll: true,
+                onError: () => setMemberOn(previous),
+                onFinish: () => setSavingMemberEnabled(false),
+            },
+        );
+    };
+
+    const submitTableEnabled = (checked) => {
+        if (savingTableEnabled) return;
+        const previous = tableOn;
+        setTableOn(checked);
+        setSavingTableEnabled(true);
+        router.put(
+            route('pengaturan.meja.update'),
+            { table_enabled: checked },
+            {
+                preserveScroll: true,
+                onError: () => setTableOn(previous),
+                onFinish: () => setSavingTableEnabled(false),
+            },
+        );
+    };
+
+    const submitNoteEnabled = (checked) => {
+        if (savingNoteEnabled) return;
+        const previous = noteOn;
+        setNoteOn(checked);
+        setSavingNoteEnabled(true);
+        router.put(
+            route('pengaturan.catatan.update'),
+            { note_enabled: checked },
+            {
+                preserveScroll: true,
+                onError: () => setNoteOn(previous),
+                onFinish: () => setSavingNoteEnabled(false),
+            },
+        );
+    };
+
+    const submitVariationEnabled = (checked) => {
+        if (savingVariationEnabled) return;
+        const previous = variationOn;
+        setVariationOn(checked);
+        setSavingVariationEnabled(true);
+        router.put(
+            route('pengaturan.variasi.update'),
+            { variation_enabled: checked },
+            {
+                preserveScroll: true,
+                onError: () => setVariationOn(previous),
+                onFinish: () => setSavingVariationEnabled(false),
+            },
+        );
+    };
+
+    const submitDraftEnabled = (checked) => {
+        if (savingDraftEnabled) return;
+        const previous = draftOn;
+        setDraftOn(checked);
+        setSavingDraftEnabled(true);
+        router.put(
+            route('pengaturan.draft.update'),
+            { draft_enabled: checked },
+            {
+                preserveScroll: true,
+                onError: () => setDraftOn(previous),
+                onFinish: () => setSavingDraftEnabled(false),
             },
         );
     };
@@ -572,6 +672,199 @@ export default function Index({
                                     positif dan berbeda satu sama lain.
                                 </p>
                             </form>
+                        </div>
+                    </section>
+
+                    <hr className="border-gray-200" />
+
+                    <section>
+                        <h3 className="mb-3 text-base font-semibold text-gray-900">
+                            Member
+                        </h3>
+                        <div className="rounded-lg bg-white p-6 shadow-sm ring-1 ring-gray-200">
+                            <label className="flex cursor-pointer items-start gap-3">
+                                <input
+                                    type="checkbox"
+                                    className="mt-1 rounded text-primary focus:ring-primary"
+                                    checked={memberOn}
+                                    disabled={savingMemberEnabled}
+                                    onChange={(e) =>
+                                        submitMemberEnabled(e.target.checked)
+                                    }
+                                />
+                                <span>
+                                    <span className="block font-medium text-gray-900">
+                                        Aktifkan fitur Member/Pelanggan
+                                    </span>
+                                    <span className="block text-sm text-gray-500">
+                                        Kalau aktif, kasir (web & aplikasi
+                                        mobile) bisa mengisi nama pelanggan
+                                        saat checkout — bebas ketik atau pilih
+                                        dari daftar Member — dan nama itu akan
+                                        tampil di struk. Kalau mati, field
+                                        pelanggan tidak muncul sama sekali di
+                                        kasir maupun struk, dan data Member
+                                        tidak ikut disinkronkan ke aplikasi
+                                        mobile.
+                                    </span>
+                                </span>
+                            </label>
+                        </div>
+                    </section>
+
+                    <hr className="border-gray-200" />
+
+                    <section>
+                        <h3 className="mb-3 text-base font-semibold text-gray-900">
+                            Meja
+                        </h3>
+                        <div className="rounded-lg bg-white p-6 shadow-sm ring-1 ring-gray-200">
+                            <label className="flex cursor-pointer items-start gap-3">
+                                <input
+                                    type="checkbox"
+                                    className="mt-1 rounded text-primary focus:ring-primary"
+                                    checked={tableOn}
+                                    disabled={savingTableEnabled}
+                                    onChange={(e) =>
+                                        submitTableEnabled(e.target.checked)
+                                    }
+                                />
+                                <span>
+                                    <span className="block font-medium text-gray-900">
+                                        Aktifkan fitur Nomor Meja
+                                    </span>
+                                    <span className="block text-sm text-gray-500">
+                                        Kalau aktif, kasir (web & aplikasi
+                                        mobile) bisa mengisi nomor meja saat
+                                        checkout — bebas ketik atau pilih dari
+                                        daftar Meja — dan nomornya akan tampil
+                                        di struk. Kalau mati, field meja tidak
+                                        muncul sama sekali di kasir maupun
+                                        struk, dan data Meja tidak ikut
+                                        disinkronkan ke aplikasi mobile.
+                                    </span>
+                                </span>
+                            </label>
+                        </div>
+                    </section>
+
+                    <hr className="border-gray-200" />
+
+                    <section>
+                        <h3 className="mb-3 text-base font-semibold text-gray-900">
+                            Catatan
+                        </h3>
+                        <div className="rounded-lg bg-white p-6 shadow-sm ring-1 ring-gray-200">
+                            <label className="flex cursor-pointer items-start gap-3">
+                                <input
+                                    type="checkbox"
+                                    className="mt-1 rounded text-primary focus:ring-primary"
+                                    checked={noteOn}
+                                    disabled={savingNoteEnabled}
+                                    onChange={(e) =>
+                                        submitNoteEnabled(e.target.checked)
+                                    }
+                                />
+                                <span>
+                                    <span className="block font-medium text-gray-900">
+                                        Aktifkan fitur Catatan
+                                    </span>
+                                    <span className="block text-sm text-gray-500">
+                                        Kalau aktif, kasir (web & aplikasi
+                                        mobile) bisa menambah catatan
+                                        per-item (mis. "es sedikit") maupun
+                                        per-transaksi (mis. "antar ke meja
+                                        5") — bebas ketik atau tap dari
+                                        Template Catatan — dan tampil di
+                                        struk. Kalau mati, field catatan
+                                        tidak muncul sama sekali di kasir
+                                        maupun struk, dan template catatan
+                                        tidak ikut disinkronkan ke aplikasi
+                                        mobile.
+                                    </span>
+                                </span>
+                            </label>
+                        </div>
+                    </section>
+
+                    <hr className="border-gray-200" />
+
+                    <section>
+                        <h3 className="mb-3 text-base font-semibold text-gray-900">
+                            Variasi
+                        </h3>
+                        <div className="rounded-lg bg-white p-6 shadow-sm ring-1 ring-gray-200">
+                            <label className="flex cursor-pointer items-start gap-3">
+                                <input
+                                    type="checkbox"
+                                    className="mt-1 rounded text-primary focus:ring-primary"
+                                    checked={variationOn}
+                                    disabled={savingVariationEnabled}
+                                    onChange={(e) =>
+                                        submitVariationEnabled(e.target.checked)
+                                    }
+                                />
+                                <span>
+                                    <span className="block font-medium text-gray-900">
+                                        Aktifkan fitur Variasi Berbayar
+                                    </span>
+                                    <span className="block text-sm text-gray-500">
+                                        Kalau aktif, produk yang punya
+                                        variasi (mis. "Gelas Besar" +2.000)
+                                        menampilkan pemilih variasi saat
+                                        ditambah ke keranjang (web & aplikasi
+                                        mobile) — kasir bisa memilih lebih
+                                        dari satu variasi sekaligus, harga
+                                        baris otomatis bertambah. Kalau mati,
+                                        pemilih variasi tidak muncul sama
+                                        sekali, produk langsung masuk
+                                        keranjang seperti biasa. Tahap 1:
+                                        variasi baru menambah harga jual,
+                                        belum memengaruhi stok/HPP. Kelola
+                                        variasi tiap produk di halaman Master
+                                        &gt; Produk.
+                                    </span>
+                                </span>
+                            </label>
+                        </div>
+                    </section>
+
+                    <hr className="border-gray-200" />
+
+                    <section>
+                        <h3 className="mb-3 text-base font-semibold text-gray-900">
+                            Draft
+                        </h3>
+                        <div className="rounded-lg bg-white p-6 shadow-sm ring-1 ring-gray-200">
+                            <label className="flex cursor-pointer items-start gap-3">
+                                <input
+                                    type="checkbox"
+                                    className="mt-1 rounded text-primary focus:ring-primary"
+                                    checked={draftOn}
+                                    disabled={savingDraftEnabled}
+                                    onChange={(e) =>
+                                        submitDraftEnabled(e.target.checked)
+                                    }
+                                />
+                                <span>
+                                    <span className="block font-medium text-gray-900">
+                                        Aktifkan fitur Draft
+                                    </span>
+                                    <span className="block text-sm text-gray-500">
+                                        Kalau aktif, kasir di aplikasi mobile
+                                        bisa menyimpan pesanan yang belum
+                                        final sebagai draft (mis. per meja),
+                                        melanjutkan/mengeditnya nanti, baru
+                                        membayarnya jadi transaksi sungguhan.
+                                        Draft tersimpan LOKAL di HP masing-
+                                        masing kasir — tidak menyentuh stok
+                                        atau jurnal sampai benar-benar
+                                        dibayar. Kalau mati, checkout selalu
+                                        langsung seperti biasa, tidak ada
+                                        tombol/daftar draft yang muncul.
+                                    </span>
+                                </span>
+                            </label>
                         </div>
                     </section>
                 </div>

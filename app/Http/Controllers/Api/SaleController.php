@@ -50,8 +50,24 @@ class SaleController extends Controller
             // mengautentikasi request ini; null berarti klien lama yang
             // belum mengirimkannya, jatuh ke perilaku hari ini apa adanya.
             'client_user_id' => ['nullable', 'integer'],
+            // Keduanya opsional & independen -- lihat docblock
+            // SaleService::createSale(). member_name, kalau dikirim, SELALU
+            // menang atas nama Member saat ini (kasus offline: nama saat
+            // benar-benar dipilih/diketik, yang mungkin berbeda dari nama
+            // Member sekarang kalau member itu sempat di-rename sebelum sale
+            // ini akhirnya di-push ke server).
+            'member_id' => ['nullable', 'exists:members,id'],
+            'member_name' => ['nullable', 'string', 'max:255'],
+            // Sama pola member_id/member_name di atas -- lihat docblock
+            // SaleService::createSale().
+            'table_id' => ['nullable', 'exists:tables,id'],
+            'table_name' => ['nullable', 'string', 'max:255'],
+            // Catatan per-transaksi & per-item -- keduanya teks bebas apa
+            // adanya, lihat docblock SaleService::createSale().
+            'note' => ['nullable', 'string', 'max:2000'],
             'lines' => ['required', 'array', 'min:1'],
             'lines.*.product_id' => ['required', 'exists:products,id'],
+            'lines.*.note' => ['nullable', 'string', 'max:2000'],
             // Opsional -- mobile TIDAK mengirimkan field ini hari ini (client
             // belum diperbarui untuk mengirim productNameSnapshot lokalnya),
             // jadi baris ini akan jatuh ke lookup nama produk saat ini di
@@ -61,6 +77,15 @@ class SaleController extends Controller
             'lines.*.product_name' => ['nullable', 'string', 'max:255'],
             'lines.*.qty' => ['required', 'numeric', 'min:0.0001'],
             'lines.*.unit_price' => ['required', 'numeric', 'min:0'],
+            // Variasi Berbayar (Tahap 1, harga-saja) -- lihat docblock
+            // SaleService::createSale(). unit_price di atas SUDAH termasuk
+            // additional_price tiap variasi terpilih (dihitung klien);
+            // array ini murni rincian snapshot untuk nota, tidak memengaruhi
+            // perhitungan harga sama sekali.
+            'lines.*.variations' => ['array'],
+            'lines.*.variations.*.variation_id' => ['required', 'exists:product_variations,id'],
+            'lines.*.variations.*.name' => ['nullable', 'string', 'max:255'],
+            'lines.*.variations.*.price' => ['nullable', 'numeric', 'min:0'],
         ]);
 
         // Satu outlet untuk sekarang (lihat docs/ROADMAP.md) — begitu
@@ -81,6 +106,11 @@ class SaleController extends Controller
                 'payment_method' => $validated['payment_method'] ?? 'cash',
                 'cash_received' => $validated['cash_received'],
                 'change_amount' => $validated['change_amount'],
+                'member_id' => $validated['member_id'] ?? null,
+                'member_name' => $validated['member_name'] ?? null,
+                'table_id' => $validated['table_id'] ?? null,
+                'table_name' => $validated['table_name'] ?? null,
+                'note' => $validated['note'] ?? null,
                 'lines' => $validated['lines'],
             ]);
         } catch (CashierMismatchException $e) {
@@ -110,7 +140,7 @@ class SaleController extends Controller
      */
     public function show(string $localUuid): JsonResponse
     {
-        $sale = Sale::where('local_uuid', $localUuid)->with('lines')->first();
+        $sale = Sale::where('local_uuid', $localUuid)->with('lines.variations')->first();
 
         if (! $sale) {
             return response()->json(['message' => 'Sale not found.'], 404);

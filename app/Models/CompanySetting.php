@@ -23,6 +23,11 @@ use Illuminate\Database\Eloquent\Model;
     'show_product_image',
     'payment_quick_amounts',
     'mobile_print_receipt',
+    'member_enabled',
+    'table_enabled',
+    'note_enabled',
+    'variation_enabled',
+    'draft_enabled',
 ])]
 class CompanySetting extends Model
 {
@@ -47,6 +52,11 @@ class CompanySetting extends Model
             'show_stock_on_button' => 'boolean',
             'show_product_image' => 'boolean',
             'mobile_print_receipt' => 'boolean',
+            'member_enabled' => 'boolean',
+            'table_enabled' => 'boolean',
+            'note_enabled' => 'boolean',
+            'variation_enabled' => 'boolean',
+            'draft_enabled' => 'boolean',
         ];
     }
 

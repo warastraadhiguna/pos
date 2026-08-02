@@ -42,6 +42,11 @@ class SettingController extends Controller
             'showProductImage' => $setting->show_product_image,
             'paymentQuickAmounts' => $setting->payment_quick_amounts,
             'mobilePrintReceipt' => $setting->mobile_print_receipt,
+            'memberEnabled' => $setting->member_enabled,
+            'tableEnabled' => $setting->table_enabled,
+            'noteEnabled' => $setting->note_enabled,
+            'variationEnabled' => $setting->variation_enabled,
+            'draftEnabled' => $setting->draft_enabled,
             'logs' => $logs,
         ]);
     }
@@ -213,6 +218,121 @@ class SettingController extends Controller
             $data['mobile_print_receipt']
                 ? 'Cetak struk otomatis di HP kasir diaktifkan.'
                 : 'Cetak struk otomatis di HP kasir dimatikan — checkout tidak akan mencoba mencetak.',
+        );
+    }
+
+    /**
+     * Saklar global fitur Member/Pelanggan. OFF berarti field pelanggan
+     * tidak muncul di kasir manapun (web/mobile) maupun di struk, DAN data
+     * member tidak ikut disinkronkan ke mobile sama sekali (lihat
+     * Api\ProductController meta.member_enabled + Api\MemberController) --
+     * bukan cuma disembunyikan tampilannya. Sengaja TIDAK dicatat ke
+     * company_setting_logs, sama seperti mobile_print_receipt di atas.
+     */
+    public function updateMemberEnabled(Request $request): RedirectResponse
+    {
+        $data = $request->validate(['member_enabled' => ['required', 'boolean']]);
+
+        CompanySetting::current()->update(['member_enabled' => $data['member_enabled']]);
+
+        return Redirect::route('pengaturan.index')->with(
+            'success',
+            $data['member_enabled']
+                ? 'Fitur Member/Pelanggan diaktifkan.'
+                : 'Fitur Member/Pelanggan dimatikan — tidak akan muncul di kasir maupun struk.',
+        );
+    }
+
+    /**
+     * Saklar global fitur Nomor Meja. OFF berarti field meja tidak muncul
+     * di kasir manapun (web/mobile) maupun di struk, DAN data meja tidak
+     * ikut disinkronkan ke mobile sama sekali (lihat Api\ProductController
+     * meta.table_enabled + Api\TableController) -- bukan cuma disembunyikan
+     * tampilannya. Sengaja TIDAK dicatat ke company_setting_logs, sama
+     * seperti member_enabled/mobile_print_receipt di atas.
+     */
+    public function updateTableEnabled(Request $request): RedirectResponse
+    {
+        $data = $request->validate(['table_enabled' => ['required', 'boolean']]);
+
+        CompanySetting::current()->update(['table_enabled' => $data['table_enabled']]);
+
+        return Redirect::route('pengaturan.index')->with(
+            'success',
+            $data['table_enabled']
+                ? 'Fitur Nomor Meja diaktifkan.'
+                : 'Fitur Nomor Meja dimatikan — tidak akan muncul di kasir maupun struk.',
+        );
+    }
+
+    /**
+     * Saklar global fitur Catatan + Template. OFF berarti field catatan
+     * (per-transaksi maupun per-item) tidak muncul di kasir manapun
+     * (web/mobile) maupun di struk, DAN template catatan tidak ikut
+     * disinkronkan ke mobile sama sekali (lihat Api\ProductController
+     * meta.note_enabled + Api\NoteTemplateController) -- bukan cuma
+     * disembunyikan tampilannya. Sengaja TIDAK dicatat ke
+     * company_setting_logs, sama seperti member_enabled/table_enabled di atas.
+     */
+    public function updateNoteEnabled(Request $request): RedirectResponse
+    {
+        $data = $request->validate(['note_enabled' => ['required', 'boolean']]);
+
+        CompanySetting::current()->update(['note_enabled' => $data['note_enabled']]);
+
+        return Redirect::route('pengaturan.index')->with(
+            'success',
+            $data['note_enabled']
+                ? 'Fitur Catatan diaktifkan.'
+                : 'Fitur Catatan dimatikan — tidak akan muncul di kasir maupun struk.',
+        );
+    }
+
+    /**
+     * Saklar global fitur Variasi Berbayar (Tahap 1, harga-saja). OFF
+     * berarti pemilih variasi tidak muncul di kasir manapun (web/mobile).
+     * BEDA dari member_enabled/table_enabled/note_enabled: data variasi
+     * itu sendiri TETAP ikut disinkronkan ke mobile terlepas dari saklar
+     * ini (lihat Api\ProductController meta.variation_enabled) -- variasi
+     * menempel ke produk seperti BOM, bukan data terpisah yang perlu
+     * digating. Sengaja TIDAK dicatat ke company_setting_logs, sama
+     * seperti member_enabled/table_enabled/note_enabled di atas.
+     */
+    public function updateVariationEnabled(Request $request): RedirectResponse
+    {
+        $data = $request->validate(['variation_enabled' => ['required', 'boolean']]);
+
+        CompanySetting::current()->update(['variation_enabled' => $data['variation_enabled']]);
+
+        return Redirect::route('pengaturan.index')->with(
+            'success',
+            $data['variation_enabled']
+                ? 'Fitur Variasi Berbayar diaktifkan.'
+                : 'Fitur Variasi Berbayar dimatikan — tidak akan muncul di kasir.',
+        );
+    }
+
+    /**
+     * Saklar global fitur Draft (nota belum final). OFF berarti kasir
+     * mobile tidak melihat tombol "Simpan Draft"/daftar draft sama sekali,
+     * checkout selalu langsung seperti sebelum fitur ini ada. BEDA dari
+     * SEMUA toggle lain di file ini: draft murni fitur LOKAL di SQLite HP
+     * -- server tidak pernah menyimpan/memproses draft apa pun, kolom ini
+     * cuma dibaca lewat meta GET /products (lihat Api\ProductController)
+     * supaya HP tahu status saklarnya. Sengaja TIDAK dicatat ke
+     * company_setting_logs, sama seperti toggle lain di atas.
+     */
+    public function updateDraftEnabled(Request $request): RedirectResponse
+    {
+        $data = $request->validate(['draft_enabled' => ['required', 'boolean']]);
+
+        CompanySetting::current()->update(['draft_enabled' => $data['draft_enabled']]);
+
+        return Redirect::route('pengaturan.index')->with(
+            'success',
+            $data['draft_enabled']
+                ? 'Fitur Draft diaktifkan.'
+                : 'Fitur Draft dimatikan — tidak akan muncul di kasir.',
         );
     }
 }

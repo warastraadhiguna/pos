@@ -29,6 +29,11 @@ class ProductResource extends JsonResource
                 'name' => $this->productCategory->name,
             ] : null,
             'components' => ProductComponentResource::collection($this->components),
+            // Variasi berbayar (Tahap 1 -- harga-saja) ikut sync bareng
+            // produk (bukan endpoint terpisah), pola sama `components` --
+            // SEMUA variasi (aktif & nonaktif) ikut, sama seperti kolom
+            // lain di sini; UI kasir yang menyaring hanya yang aktif.
+            'variations' => ProductVariationResource::collection($this->variations),
             // HANYA thumbnail (~200px) -- versi web (~600px) murni untuk
             // pratinjau admin (Master/Products), tidak pernah dibutuhkan
             // mobile. `image_hash` menyertai `image_url` supaya HP tahu ada

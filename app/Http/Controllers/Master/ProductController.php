@@ -5,9 +5,11 @@ namespace App\Http\Controllers\Master;
 use App\Http\Controllers\Controller;
 use App\Models\Product;
 use App\Models\ProductCategory;
+use App\Models\ProductVariation;
 use App\Models\TaxRate;
 use App\Models\Uom;
 use App\Services\ProductImageService;
+use Illuminate\Database\QueryException;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -42,6 +44,7 @@ class ProductController extends Controller
         $product = DB::transaction(function () use ($data) {
             $product = Product::create($data['product']);
             $product->components()->createMany($data['components']);
+            $this->syncVariations($product, $data['variations']);
 
             return $product;
         });
@@ -60,7 +63,10 @@ class ProductController extends Controller
     public function edit(Product $product): Response
     {
         return Inertia::render('Master/Products/Form', [
-            'product' => $product->load('components.item.baseUom:id,code'),
+            'product' => $product->load([
+                'components.item.baseUom:id,code',
+                'variations.components.item.baseUom:id,code',
+            ]),
             ...$this->formOptions(),
         ]);
     }
@@ -73,8 +79,13 @@ class ProductController extends Controller
             $product->update($data['product']);
             // BOM diganti seluruhnya setiap update — lebih sederhana & aman
             // daripada diff baris-per-baris untuk CRUD admin yang jarang dipakai.
+            // Variasi TIDAK bisa memakai pola yang sama -- lihat
+            // syncVariations() di bawah: sale_line_variations.variation_id
+            // restrictOnDelete berarti "hapus semua lalu buat ulang" akan
+            // gagal begitu ada variasi yang pernah terjual.
             $product->components()->delete();
             $product->components()->createMany($data['components']);
+            $this->syncVariations($product, $data['variations']);
         });
 
         // Di LUAR transaction DB, sama alasannya dengan store() -- lihat
@@ -117,6 +128,21 @@ class ProductController extends Controller
             'components.*.item_id' => ['required', 'exists:items,id'],
             'components.*.qty' => ['required', 'numeric', 'min:0.0001'],
             'components.*.uom_id' => ['required', 'exists:uoms,id'],
+            // Variasi Berbayar (Tahap 1, harga-saja) -- `id` null/absen
+            // berarti baris baru; `id` terisi berarti baris yang sudah ada
+            // (diedit atau dipertahankan apa adanya), lihat syncVariations().
+            'variations' => ['array'],
+            'variations.*.id' => ['nullable', 'integer'],
+            'variations.*.name' => ['required', 'string', 'max:255'],
+            'variations.*.additional_price' => ['required', 'numeric', 'min:0'],
+            'variations.*.is_active' => ['boolean'],
+            // BOM per variasi (Tahap 2) -- kosong berarti variasi ini tidak
+            // konsumsi apa pun, HPP-nya 0 (identik Tahap 1). Sama aturan
+            // dengan `components.*` di atas (BOM produk).
+            'variations.*.components' => ['array'],
+            'variations.*.components.*.item_id' => ['required', 'exists:items,id'],
+            'variations.*.components.*.qty' => ['required', 'numeric', 'min:0.0001'],
+            'variations.*.components.*.uom_id' => ['required', 'exists:uoms,id'],
             // max:5120 KB (5MB). dimensions max_width/max_height mencegah
             // "decompression bomb" -- file kecil tapi dimensi piksel raksasa
             // yang bisa memakan banyak memori saat diproses GD, terlepas
@@ -141,9 +167,71 @@ class ProductController extends Controller
                 'is_active' => $request->boolean('is_active'),
             ],
             'components' => $validated['components'] ?? [],
+            'variations' => $validated['variations'] ?? [],
             'image' => $validated['image'] ?? null,
             'remove_image' => $request->boolean('remove_image'),
         ];
+    }
+
+    /**
+     * Diff-based upsert -- BEDA dari components() yang blind-replace (lihat
+     * komentar di update()): variasi yang sudah pernah dipakai transaksi
+     * TIDAK BISA dihapus (sale_line_variations.variation_id
+     * restrictOnDelete), jadi "hapus semua lalu buat ulang" akan
+     * melemparkan QueryException tengah jalan. Sebagai gantinya:
+     * - baris dengan `id` yang cocok dengan variasi yang sudah ada -> update.
+     * - baris tanpa `id` -> buat baru.
+     * - variasi lama yang TIDAK lagi ada di daftar submit -> coba hapus;
+     *   kalau dibentur constraint (pernah terjual), nonaktifkan saja
+     *   (is_active=false) -- setara "hapus" dari sudut pandang admin
+     *   (tidak lagi bisa dipilih di kasir), tanpa merusak riwayat
+     *   transaksi lama maupun menggagalkan seluruh penyimpanan produk.
+     *
+     * BOM per variasi (Tahap 2, `components`) sebaliknya BOLEH blind
+     * delete+recreate seperti BOM produk di update() -- tabel
+     * `product_variation_components` tidak direferensikan balik oleh apa
+     * pun (lihat docblock migrasinya), jadi tidak kena constraint yang
+     * memaksa variasi itu sendiri pakai diff-based upsert di atas.
+     *
+     * @param  array<int, array{id?: ?int, name: string, additional_price: int|float|string, is_active?: bool, components?: array<int, array{item_id: int, qty: int|float|string, uom_id: int}>}>  $variations
+     */
+    private function syncVariations(Product $product, array $variations): void
+    {
+        $existingIds = $product->variations()->pluck('id')->all();
+        $submittedIds = array_filter(array_column($variations, 'id'));
+        $toRemove = array_diff($existingIds, $submittedIds);
+
+        foreach ($toRemove as $id) {
+            $variation = ProductVariation::find($id);
+            if (! $variation) {
+                continue;
+            }
+            try {
+                $variation->delete();
+            } catch (QueryException) {
+                $variation->update(['is_active' => false]);
+            }
+        }
+
+        foreach ($variations as $variationData) {
+            $payload = [
+                'name' => $variationData['name'],
+                'additional_price' => $variationData['additional_price'],
+                'is_active' => (bool) ($variationData['is_active'] ?? true),
+            ];
+
+            if (! empty($variationData['id'])) {
+                $variation = ProductVariation::where('id', $variationData['id'])
+                    ->where('product_id', $product->id)
+                    ->firstOrFail();
+                $variation->update($payload);
+            } else {
+                $variation = $product->variations()->create($payload);
+            }
+
+            $variation->components()->delete();
+            $variation->components()->createMany($variationData['components'] ?? []);
+        }
     }
 
     /**

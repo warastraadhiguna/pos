@@ -5,8 +5,9 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
-#[Fillable(['sale_id', 'product_id', 'product_name', 'qty', 'unit_price', 'tax_rate_id', 'line_total', 'hpp_total'])]
+#[Fillable(['sale_id', 'product_id', 'product_name', 'qty', 'unit_price', 'tax_rate_id', 'line_total', 'hpp_total', 'note'])]
 class SaleLine extends Model
 {
     protected function casts(): array
@@ -32,5 +33,10 @@ class SaleLine extends Model
     public function taxRate(): BelongsTo
     {
         return $this->belongsTo(TaxRate::class);
+    }
+
+    public function variations(): HasMany
+    {
+        return $this->hasMany(SaleLineVariation::class);
     }
 }
