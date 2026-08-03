@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Master;
 
 use App\Http\Controllers\Controller;
+use App\Models\CompanySetting;
 use App\Models\Product;
 use App\Models\ProductCategory;
 use App\Models\ProductVariation;
@@ -239,7 +240,7 @@ class ProductController extends Controller
      * searches on demand (Master\ItemController::search()) instead of the
      * page shipping the entire catalog up front.
      *
-     * @return array{uoms: \Illuminate\Support\Collection, taxRates: \Illuminate\Support\Collection, productCategories: \Illuminate\Support\Collection}
+     * @return array{uoms: \Illuminate\Support\Collection, taxRates: \Illuminate\Support\Collection, productCategories: \Illuminate\Support\Collection, variationEnabled: bool}
      */
     private function formOptions(): array
     {
@@ -247,6 +248,13 @@ class ProductController extends Controller
             'uoms' => Uom::orderBy('code')->get(),
             'taxRates' => TaxRate::orderBy('name')->get(),
             'productCategories' => ProductCategory::orderBy('name')->get(),
+            // Penajaman UX "akses pengelolaan fitur opsional" -- variasi
+            // dikelola EMBEDDED di form ini (bukan halaman terpisah), jadi
+            // gerbangnya di sini, bukan di sidebar. OFF -> Form.jsx
+            // menyembunyikan seluruh editor variasi (data yang sudah ada
+            // TIDAK terhapus, cuma editornya disembunyikan -- muncul lagi
+            // begitu saklarnya dinyalakan ulang di Pengaturan).
+            'variationEnabled' => CompanySetting::current()->variation_enabled,
         ];
     }
 }

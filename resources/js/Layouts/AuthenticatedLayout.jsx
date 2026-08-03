@@ -38,6 +38,13 @@ const icons = {
         'M9 3h6l4 4v11a2 2 0 01-2 2H9a2 2 0 01-2-2V5a2 2 0 012-2zM9 9h6M9 13h6M9 17h3',
 };
 
+// Item dengan `feature` HANYA tampil kalau saklar fitur opsional itu ON di
+// Pengaturan (`company_settings.*_enabled`, lihat `featureFlags` shared
+// prop dari HandleInertiaRequests) -- pola SEJAJAR `permission`, dicek
+// bersamaan di filterVisibleItem(). OFF menyembunyikan MENU-nya saja,
+// data & halamannya sendiri tetap ada (bisa diakses langsung lewat URL,
+// lihat catatan di route Master masing-masing) -- ini murni penajaman
+// UX, bukan otorisasi.
 const navGroups = [
     {
         label: null,
@@ -244,9 +251,9 @@ const navGroups = [
                 ],
             },
             { name: 'Supplier', href: 'master.suppliers.index', match: 'master.suppliers.*', icon: icons.supplier, permission: 'master-data.manage' },
-            { name: 'Member', href: 'master.members.index', match: 'master.members.*', icon: icons.pengguna, permission: 'master-data.manage' },
-            { name: 'Meja', href: 'master.tables.index', match: 'master.tables.*', icon: icons.meja, permission: 'master-data.manage' },
-            { name: 'Template Catatan', href: 'master.note-templates.index', match: 'master.note-templates.*', icon: icons.catatan, permission: 'master-data.manage' },
+            { name: 'Member', href: 'master.members.index', match: 'master.members.*', icon: icons.pengguna, permission: 'master-data.manage', feature: 'member_enabled' },
+            { name: 'Meja', href: 'master.tables.index', match: 'master.tables.*', icon: icons.meja, permission: 'master-data.manage', feature: 'table_enabled' },
+            { name: 'Template Catatan', href: 'master.note-templates.index', match: 'master.note-templates.*', icon: icons.catatan, permission: 'master-data.manage', feature: 'note_enabled' },
             { name: 'Ukuran', href: 'master.uoms.index', match: 'master.uoms.*', icon: icons.ukuran, permission: 'master-data.manage' },
         ],
     },
@@ -359,24 +366,38 @@ function SidebarParent({ item }) {
     );
 }
 
-function filterVisibleItem(item, permissions) {
+// `featureFlags` null berarti belum diketahui (mis. shared prop belum
+// selesai di-resolve) ATAU guest -- item ber-`feature` diperlakukan sebagai
+// TIDAK terlihat sampai flags-nya benar-benar ada, bukan diam-diam
+// ditampilkan (aman by default, sama arah dengan gerbang `permission`).
+function isFeatureOn(item, featureFlags) {
+    return !item.feature || Boolean(featureFlags?.[item.feature]);
+}
+
+function filterVisibleItem(item, permissions, featureFlags) {
     if (item.children) {
         const children = item.children.filter(
-            (child) => !child.permission || permissions.includes(child.permission),
+            (child) =>
+                (!child.permission || permissions.includes(child.permission)) &&
+                isFeatureOn(child, featureFlags),
         );
 
         return children.length > 0 ? { ...item, children } : null;
     }
 
-    return !item.permission || permissions.includes(item.permission) ? item : null;
+    const visible =
+        (!item.permission || permissions.includes(item.permission)) &&
+        isFeatureOn(item, featureFlags);
+
+    return visible ? item : null;
 }
 
-function SidebarNav({ permissions, collapsed = false }) {
+function SidebarNav({ permissions, featureFlags, collapsed = false }) {
     const visibleGroups = navGroups
         .map((group) => ({
             ...group,
             items: group.items
-                .map((item) => filterVisibleItem(item, permissions))
+                .map((item) => filterVisibleItem(item, permissions, featureFlags))
                 .filter(Boolean),
         }))
         .filter((group) => group.items.length > 0);
@@ -418,6 +439,7 @@ export default function AuthenticatedLayout({ header, children }) {
     const user = usePage().props.auth.user;
     const permissions = usePage().props.auth.permissions;
     const flash = usePage().props.flash;
+    const featureFlags = usePage().props.featureFlags;
 
     const [showingMobileNav, setShowingMobileNav] = useState(false);
     const [collapsed, setCollapsed] = useState(
@@ -472,7 +494,7 @@ export default function AuthenticatedLayout({ header, children }) {
                         </svg>
                     </button>
                 )}
-                <SidebarNav permissions={permissions} collapsed={collapsed} />
+                <SidebarNav permissions={permissions} featureFlags={featureFlags} collapsed={collapsed} />
             </aside>
 
             {/* Mobile sidebar (slide-over) */}
@@ -498,7 +520,7 @@ export default function AuthenticatedLayout({ header, children }) {
                             </button>
                         </div>
                         <div onClick={() => setShowingMobileNav(false)}>
-                            <SidebarNav permissions={permissions} />
+                            <SidebarNav permissions={permissions} featureFlags={featureFlags} />
                         </div>
                     </aside>
                 </div>

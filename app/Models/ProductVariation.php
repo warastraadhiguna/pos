@@ -16,6 +16,19 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 #[Fillable(['product_id', 'name', 'additional_price', 'is_active'])]
 class ProductVariation extends Model
 {
+    /**
+     * Sentuh `products.updated_at` tiap kali variasi ini disimpan/dihapus.
+     * TANPA ini: admin yang menambah/mengedit/menghapus variasi pada
+     * produk yang field-nya sendiri tidak berubah tidak akan mem-bump
+     * `updated_at` produk (Eloquent skip UPDATE query kalau `isDirty()`
+     * false) -- akibatnya Api\ProductController::index()'s pull sync
+     * INKREMENTAL (`updated_at >= watermark`) melewatkan produk itu sama
+     * sekali, jadi variasi barunya tidak pernah sampai ke HP walau sudah
+     * ada di database (ditemukan dari laporan "pemilih variasi tidak
+     * muncul walau sudah sync").
+     */
+    protected $touches = ['product'];
+
     protected function casts(): array
     {
         return [

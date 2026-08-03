@@ -23,7 +23,13 @@ function isDirectSaleComponents(components) {
     return components.length === 1 && Number(components[0].qty) === 1;
 }
 
-export default function Form({ product, uoms, taxRates, productCategories }) {
+export default function Form({
+    product,
+    uoms,
+    taxRates,
+    productCategories,
+    variationEnabled,
+}) {
     const editing = product !== null;
 
     const { data, setData, post, put, processing, errors } = useForm({
@@ -751,6 +757,7 @@ export default function Form({ product, uoms, taxRates, productCategories }) {
                                 )}
                             </div>
 
+                            {variationEnabled && (
                             <div>
                                 <div className="flex items-center justify-between">
                                     <InputLabel value="Variasi" />
@@ -1056,6 +1063,7 @@ export default function Form({ product, uoms, taxRates, productCategories }) {
                                     )}
                                 </div>
                             </div>
+                            )}
 
                             <div className="flex items-center gap-4">
                                 <PrimaryButton disabled={processing}>

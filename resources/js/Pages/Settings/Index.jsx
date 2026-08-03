@@ -6,7 +6,7 @@ import PrimaryButton from '@/Components/PrimaryButton';
 import SecondaryButton from '@/Components/SecondaryButton';
 import TextInput from '@/Components/TextInput';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
-import { Head, router, usePage } from '@inertiajs/react';
+import { Head, Link, router, usePage } from '@inertiajs/react';
 import { useState } from 'react';
 
 const formatDateTime = (iso) =>
@@ -709,6 +709,15 @@ export default function Index({
                                     </span>
                                 </span>
                             </label>
+                            {memberOn && (
+                                <div className="mt-4 border-t border-gray-100 pt-4">
+                                    <Link href={route('master.members.index')}>
+                                        <SecondaryButton type="button">
+                                            Kelola Member
+                                        </SecondaryButton>
+                                    </Link>
+                                </div>
+                            )}
                         </div>
                     </section>
 
@@ -745,6 +754,15 @@ export default function Index({
                                     </span>
                                 </span>
                             </label>
+                            {tableOn && (
+                                <div className="mt-4 border-t border-gray-100 pt-4">
+                                    <Link href={route('master.tables.index')}>
+                                        <SecondaryButton type="button">
+                                            Kelola Meja
+                                        </SecondaryButton>
+                                    </Link>
+                                </div>
+                            )}
                         </div>
                     </section>
 
@@ -784,6 +802,15 @@ export default function Index({
                                     </span>
                                 </span>
                             </label>
+                            {noteOn && (
+                                <div className="mt-4 border-t border-gray-100 pt-4">
+                                    <Link href={route('master.note-templates.index')}>
+                                        <SecondaryButton type="button">
+                                            Kelola Template Catatan
+                                        </SecondaryButton>
+                                    </Link>
+                                </div>
+                            )}
                         </div>
                     </section>
 
@@ -826,6 +853,15 @@ export default function Index({
                                     </span>
                                 </span>
                             </label>
+                            {variationOn && (
+                                <div className="mt-4 border-t border-gray-100 pt-4">
+                                    <Link href={route('master.products.index')}>
+                                        <SecondaryButton type="button">
+                                            Kelola Produk &amp; Variasi
+                                        </SecondaryButton>
+                                    </Link>
+                                </div>
+                            )}
                         </div>
                     </section>
 

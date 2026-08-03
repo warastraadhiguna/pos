@@ -111,6 +111,60 @@ class ProductControllerTest extends TestCase
         $response->assertJsonPath('data.0.is_active', false);
     }
 
+    /**
+     * Reproduksi bug laporan mobile "pemilih variasi tidak muncul walau
+     * sudah sync": admin membuka produk LAMA yang field intinya (nama,
+     * harga, dst) TIDAK diubah, cuma menambah satu variasi baru lewat
+     * Master\ProductController::update() -- persis alur form di web.
+     * Eloquent TIDAK meng-update `updated_at` produk kalau tidak ada
+     * kolomnya sendiri yang berubah (`save()` skip UPDATE query kalau
+     * `isDirty()` false), jadi pull sync INKREMENTAL berikutnya (yang
+     * memfilter `products.updated_at >= watermark`) melewatkan produk itu
+     * sama sekali -- variasi barunya tidak pernah sampai ke HP walau ada
+     * di database server.
+     */
+    public function test_updated_since_still_returns_a_product_whose_only_change_is_a_new_variation(): void
+    {
+        $role = \App\Models\Role::create(['name' => 'Test Role '.uniqid()]);
+        $role->permissions()->attach(
+            \App\Models\Permission::create(['key' => 'master-data.manage', 'label' => 'master-data.manage', 'group' => 'Test'])->id,
+        );
+        $admin = User::factory()->create(['role_id' => $role->id]);
+        Sanctum::actingAs($admin, ['*']);
+
+        $product = Product::create(['name' => 'Es Teh', 'sell_price' => 5000, 'is_active' => true]);
+        DB::table('products')->where('id', $product->id)->update(['updated_at' => Carbon::parse('2020-01-01')]);
+
+        $watermark = Carbon::now()->subMinute();
+
+        // Alur admin sungguhan: PUT ke Master\ProductController::update()
+        // dengan field produk PERSIS SAMA seperti sebelumnya (nama, harga,
+        // dll tidak diubah admin), cuma menambah satu variasi baru.
+        $updateResponse = $this->actingAs($admin)->put(route('master.products.update', $product), [
+            'name' => 'Es Teh',
+            'barcode' => '',
+            'sell_price' => 5000,
+            'tax_rate_id' => '',
+            'is_active' => true,
+            'components' => [],
+            'variations' => [
+                ['name' => 'Gelas Besar', 'additional_price' => 2000, 'is_active' => true, 'components' => []],
+            ],
+        ]);
+        $updateResponse->assertRedirect(route('master.products.index'));
+
+        $this->assertSame(1, $product->variations()->count());
+
+        $response = $this->getJson('/api/v1/products?'.http_build_query(['updated_since' => $watermark->toIso8601String()]));
+
+        $response->assertOk();
+        $names = collect($response->json('data'))->pluck('name');
+        $this->assertTrue(
+            $names->contains('Es Teh'),
+            'Produk dengan variasi baru harus tetap muncul di pull sync inkremental, bukan cuma di full pull.',
+        );
+    }
+
     public function test_updated_since_only_returns_products_changed_after_the_watermark(): void
     {
         Sanctum::actingAs(User::factory()->create(), ['*']);
