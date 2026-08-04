@@ -65,6 +65,15 @@ class SaleController extends Controller
             // Catatan per-transaksi & per-item -- keduanya teks bebas apa
             // adanya, lihat docblock SaleService::createSale().
             'note' => ['nullable', 'string', 'max:2000'],
+            // Langkah 3 fitur Draft -- diisi HANYA kalau sale ini
+            // finalisasi sebuah draft (lihat `checkout_sheet.dart`
+            // mobile). Opsional & tervalidasi longgar (`uuid` saja, BUKAN
+            // `exists:drafts,local_uuid`) -- draft yang belum pernah
+            // sync sama sekali (mis. dibuat sebelum fitur ini ada) tetap
+            // harus bisa difinalisasi tanpa gagal cuma karena servernya
+            // tidak pernah dengar soal draft itu, lihat docblock
+            // DraftSyncService::finalizeByLocalUuid().
+            'draft_local_uuid' => ['nullable', 'uuid'],
             'lines' => ['required', 'array', 'min:1'],
             'lines.*.product_id' => ['required', 'exists:products,id'],
             'lines.*.note' => ['nullable', 'string', 'max:2000'],
@@ -111,6 +120,7 @@ class SaleController extends Controller
                 'table_id' => $validated['table_id'] ?? null,
                 'table_name' => $validated['table_name'] ?? null,
                 'note' => $validated['note'] ?? null,
+                'draft_local_uuid' => $validated['draft_local_uuid'] ?? null,
                 'lines' => $validated['lines'],
             ]);
         } catch (CashierMismatchException $e) {

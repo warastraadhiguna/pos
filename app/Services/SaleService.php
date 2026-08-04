@@ -44,6 +44,7 @@ class SaleService
         private readonly InventoryService $inventory,
         private readonly PostingService $posting,
         private readonly CashAccountService $cashAccounts,
+        private readonly DraftSyncService $drafts,
     ) {}
 
     /**
@@ -342,6 +343,15 @@ class SaleService
             ]);
 
             $this->postSaleJournal($sale, $subtotal, $taxTotal, $grandTotal, $hppGrandTotal, $occurredAt, $cashAccountCode);
+
+            // Langkah 3 fitur Draft: kalau sale ini finalisasi sebuah draft
+            // (mobile mengirim `draft_local_uuid`), tandai draft itu
+            // 'finalized' DALAM transaksi yang SAMA -- satu commit atomik,
+            // tidak pernah ada window "sale sudah tersimpan tapi status
+            // draft ketinggalan" akibat dua request terpisah yang salah
+            // satunya gagal sendirian. No-op diam-diam kalau uuid tidak
+            // dikenali (lihat docblock DraftSyncService::finalizeByLocalUuid()).
+            $this->drafts->finalizeByLocalUuid($data['draft_local_uuid'] ?? null);
 
             $freshSale = $sale->fresh('lines.variations');
             $freshSale->wasReplayed = false;

@@ -10,6 +10,7 @@ use App\Models\TaxRate;
 use App\Models\Uom;
 use App\Models\Warehouse;
 use App\Services\CashAccountService;
+use App\Services\DraftSyncService;
 use App\Services\InventoryService;
 use App\Services\PostingService;
 use App\Services\PurchaseService;
@@ -53,7 +54,7 @@ class TaxReportServiceTest extends TestCase
         $inventory = new InventoryService();
         $posting = new PostingService();
         $cashAccounts = new CashAccountService();
-        $this->sales = new SaleService($inventory, $posting, $cashAccounts);
+        $this->sales = new SaleService($inventory, $posting, $cashAccounts, new DraftSyncService());
         $this->purchases = new PurchaseService($inventory, $posting, $cashAccounts);
         $this->reports = new TaxReportService();
 

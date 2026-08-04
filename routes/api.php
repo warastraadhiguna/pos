@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\DashboardController;
+use App\Http\Controllers\Api\DraftController;
 use App\Http\Controllers\Api\ItemController;
 use App\Http\Controllers\Api\MemberController;
 use App\Http\Controllers\Api\NoteTemplateController;
@@ -41,6 +42,9 @@ Route::prefix('v1')->group(function () {
             Route::get('/members', [MemberController::class, 'index']);
             Route::get('/tables', [TableController::class, 'index']);
             Route::get('/note-templates', [NoteTemplateController::class, 'index']);
+            // Langkah 3 fitur Draft -- pull draft lintas-device, pola sama
+            // master data lain di grup ini (updated_since inkremental).
+            Route::get('/drafts', [DraftController::class, 'index']);
         });
 
         Route::post('/sales', [SaleController::class, 'store'])
@@ -48,5 +52,12 @@ Route::prefix('v1')->group(function () {
         Route::get('/sales/{local_uuid}', [SaleController::class, 'show'])
             ->whereUuid('local_uuid')
             ->middleware('abilities:sync:status');
+
+        Route::middleware('abilities:sync:push')->group(function () {
+            Route::post('/drafts', [DraftController::class, 'store']);
+            Route::post('/drafts/{draft}/hold', [DraftController::class, 'hold']);
+            Route::post('/drafts/{draft}/release', [DraftController::class, 'release']);
+            Route::delete('/drafts/{draft}', [DraftController::class, 'destroy']);
+        });
     });
 });
