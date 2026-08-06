@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Exceptions\CashierMismatchException;
 use App\Exceptions\InsufficientCashReceivedException;
+use App\Exceptions\InvalidQrisAccountException;
 use App\Exceptions\UnreconciledChangeAmountException;
 use App\Exceptions\UnreconciledSaleTotalException;
 use App\Models\CompanySetting;
@@ -107,14 +108,33 @@ class SaleService
      * caller's arithmetic — same discipline as the subtotal/tax/grand_total
      * check below).
      *
+     * BOTH are IGNORED entirely when payment_method is 'qris' — QRIS is
+     * always paid exactly via scan, so this always forces cash_received =
+     * grand_total / change_amount = 0 regardless of what the caller sends
+     * (or doesn't), skipping the reconciliation checks above rather than
+     * failing a fully-paid QRIS sale over a client/server total mismatch
+     * (see rancangan fitur QRIS).
+     *
      * cash_account_code is likewise OPTIONAL -- which Kas/Bank account
      * actually received this sale's money (see CashAccountService). When
-     * absent, defaults to Kas (CashAccountService::DEFAULT_CODE). The
-     * mobile POS API never sends this at all (it has no UI for it by
-     * design -- every mobile sale is physically cash-in-hand today, since
-     * payment_method there is locked to 'cash' with no other tender), so
-     * every mobile sale always lands on Kas via this same default; only
-     * the web Kasir flow ever sends a non-default value.
+     * absent AND payment_method is 'cash' (or anything else that isn't
+     * 'qris'), defaults to Kas (CashAccountService::DEFAULT_CODE) -- the
+     * mobile POS API never sends this at all for cash sales (no UI for it
+     * by design, every mobile cash sale is physically cash-in-hand), so it
+     * always lands on Kas via this default; only the web Kasir flow ever
+     * sends a non-default value there.
+     *
+     * When absent AND payment_method is 'qris' (Tafsir A -- pencatatan,
+     * lihat rancangan fitur QRIS), the default is instead the Bank account
+     * configured in Pengaturan (CompanySetting::qris_cash_account_code),
+     * NEVER Kas -- the mobile POS API has no account picker for QRIS
+     * either, so every mobile QRIS sale resolves through this same
+     * settings-driven default; the web Kasir flow sends an explicit Bank
+     * account picked from CashAccountService::selectableBankAccounts()
+     * instead. Either way, a 'qris' sale whose resolved account turns out
+     * to be Kas throws InvalidQrisAccountException — this is a hard
+     * invariant, not a preference: QRIS money always lands in a bank
+     * account, never physically in the cash drawer.
      *
      * client_user_id is likewise OPTIONAL and, when present, likewise never
      * trusted blindly — see CashierMismatchException's docblock. It exists
@@ -217,8 +237,35 @@ class SaleService
         return DB::transaction(function () use ($data, $localUuid) {
             $warehouse = Warehouse::findOrFail($data['warehouse_id']);
             $paymentMethod = $data['payment_method'] ?? 'cash';
-            $cashAccountCode = $data['cash_account_code'] ?? CashAccountService::DEFAULT_CODE;
+
+            // QRIS (Tafsir A -- pencatatan murni, lihat rancangan fitur
+            // QRIS): caller yang TIDAK mengirim cash_account_code sama
+            // sekali (mobile POS -- tidak punya UI pemilih akun apa pun,
+            // lihat docblock method ini) jatuh ke akun Bank default yang
+            // diatur di Pengaturan, BUKAN ke Kas seperti metode lain.
+            // Caller yang MEMANG mengirimnya (web Kasir, lewat picker
+            // "Masuk Ke" yang dibatasi ke akun Bank saat QRIS dipilih)
+            // tetap dipakai apa adanya -- divalidasi di bawah, sama-sama
+            // ditolak kalau ternyata Kas.
+            if ($paymentMethod === 'qris' && ! array_key_exists('cash_account_code', $data)) {
+                $cashAccountCode = CompanySetting::current()->qris_cash_account_code
+                    ?? throw new InvalidQrisAccountException(
+                        'Metode QRIS memerlukan akun Bank tujuan -- atur dulu di Pengaturan.'
+                    );
+            } else {
+                $cashAccountCode = $data['cash_account_code'] ?? CashAccountService::DEFAULT_CODE;
+            }
+
             $this->cashAccounts->assertValidCashAccount($cashAccountCode);
+
+            // Inti fitur QRIS: uangnya SELALU mendarat di rekening bank,
+            // tidak pernah fisik di laci tunai -- lihat docblock
+            // InvalidQrisAccountException.
+            if ($paymentMethod === 'qris' && $cashAccountCode === CashAccountService::DEFAULT_CODE) {
+                throw new InvalidQrisAccountException(
+                    "Metode QRIS tidak boleh masuk ke akun Kas ({$cashAccountCode}) -- pilih akun Bank tujuan."
+                );
+            }
 
             // Konversi EKSPLISIT ke WIB di sini, satu kali, dipakai untuk
             // SEMUA turunan tanggal di bawah (sales.date, sales.occurred_at,
@@ -311,9 +358,19 @@ class SaleService
                 );
             }
 
-            // Lihat docblock method ini: opsional, cuma divalidasi kalau
-            // caller (mobile POS) benar-benar mengirimkannya.
-            if (array_key_exists('cash_received', $data)) {
+            if ($paymentMethod === 'qris') {
+                // QRIS dibayar PAS lewat scan -- tidak ada konsep uang
+                // diterima/kembalian sama sekali (lihat rancangan fitur
+                // QRIS). Apa pun yang caller kirim di cash_received/
+                // change_amount (kalau ada) diabaikan sepenuhnya di sini,
+                // BUKAN divalidasi seperti cabang cash di bawah -- selisih
+                // penghitungan grand_total klien vs server tidak boleh
+                // menggagalkan transaksi QRIS yang sudah tuntas dibayar.
+                $cashReceived = $grandTotal;
+                $changeAmount = '0';
+            } elseif (array_key_exists('cash_received', $data)) {
+                // Lihat docblock method ini: opsional, cuma divalidasi kalau
+                // caller (mobile POS) benar-benar mengirimkannya.
                 $cashReceived = (string) $data['cash_received'];
                 $changeAmount = (string) ($data['change_amount'] ?? '0');
 

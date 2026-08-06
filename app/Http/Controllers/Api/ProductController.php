@@ -81,6 +81,17 @@ class ProductController extends Controller
      * Kolom ini ditumpangkan di sini (bukan endpoint baru) semata supaya
      * HP tahu status saklarnya lewat jalur sync yang SUDAH ADA, pola sama
      * kolom saklar lain — bukan karena draft "milik" data produk.
+     *
+     * `meta.qris_enabled` adalah saklar metode pembayaran QRIS (Tafsir A --
+     * pencatatan, BUKAN integrasi payment gateway; lihat rancangan fitur
+     * QRIS). Mobile client HARUS memeriksa ini sebelum menampilkan opsi
+     * QRIS di checkout — kalau false, checkout selalu Tunai saja, identik
+     * sebelum fitur ini ada. BEDA dari member_enabled/table_enabled/dst:
+     * tidak ada akun Bank yang ikut disinkronkan ke mobile sama sekali
+     * (mobile tidak pernah mengirim cash_account_code, lihat
+     * SaleService::createSale()) — server yang meresolve akun tujuan QRIS
+     * sepenuhnya sendiri dari CompanySetting::qris_cash_account_code saat
+     * sale QRIS itu benar-benar dibuat.
      */
     public function index(Request $request): AnonymousResourceCollection
     {
@@ -112,6 +123,7 @@ class ProductController extends Controller
                 'note_enabled' => $setting->note_enabled,
                 'variation_enabled' => $setting->variation_enabled,
                 'draft_enabled' => $setting->draft_enabled,
+                'qris_enabled' => $setting->qris_enabled,
             ]]);
     }
 

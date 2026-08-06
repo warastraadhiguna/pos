@@ -3,6 +3,7 @@
 namespace Tests\Feature\Api;
 
 use App\Models\Account;
+use App\Models\CompanySetting;
 use App\Models\DiningTable;
 use App\Models\Item;
 use App\Models\Member;
@@ -144,6 +145,83 @@ class SaleControllerTest extends TestCase
         $response->assertCreated();
         $sale = Sale::firstOrFail();
         $this->assertSame('1-1000', $sale->cash_account_code);
+    }
+
+    /**
+     * QRIS (Tafsir A -- pencatatan) dibuat OFFLINE di mobile lalu di-sync
+     * PERSIS seperti sale biasa (lihat rancangan fitur QRIS) -- payload di
+     * sini mereproduksi persis apa yang mobile kirim (payment_method=qris,
+     * TANPA cash_account_code sama sekali, sama seperti Tunai) untuk
+     * membuktikan resolusi akun Bank dari Pengaturan lolos end-to-end
+     * lewat HTTP, bukan cuma lewat pemanggilan service langsung.
+     */
+    public function test_a_mobile_qris_sale_resolves_the_configured_bank_account_and_never_kas(): void
+    {
+        CompanySetting::current()->update(['qris_cash_account_code' => '1-1100']);
+        [, $product] = $this->makeWidgetProduct();
+
+        $response = $this->postJson('/api/v1/sales', [
+            'local_uuid' => (string) Str::uuid(),
+            'date' => '2026-08-06',
+            'payment_method' => 'qris',
+            'cash_received' => 10000,
+            'change_amount' => 0,
+            'lines' => [
+                ['product_id' => $product->id, 'qty' => 2, 'unit_price' => 5000],
+            ],
+        ]);
+
+        $response->assertCreated();
+        $response->assertJsonPath('data.payment_method', 'qris');
+        $sale = Sale::firstOrFail();
+        $this->assertSame('1-1100', $sale->cash_account_code);
+    }
+
+    /**
+     * Mobile TIDAK PERNAH punya UI pemilih akun (lihat docblock
+     * SaleService::createSale()) -- kalau QRIS belum pernah diatur di
+     * Pengaturan (qris_cash_account_code masih NULL), tidak ada akun
+     * tujuan sama sekali untuk diresolve. Server menolak dengan 422
+     * (InvalidQrisAccountException, ditangkap Throwable generik di
+     * controller ini), BUKAN diam-diam jatuh ke Kas.
+     */
+    public function test_a_mobile_qris_sale_without_a_configured_bank_account_is_rejected(): void
+    {
+        $this->assertNull(CompanySetting::current()->qris_cash_account_code);
+        [, $product] = $this->makeWidgetProduct();
+
+        $response = $this->postJson('/api/v1/sales', [
+            'local_uuid' => (string) Str::uuid(),
+            'date' => '2026-08-06',
+            'payment_method' => 'qris',
+            'cash_received' => 10000,
+            'change_amount' => 0,
+            'lines' => [
+                ['product_id' => $product->id, 'qty' => 2, 'unit_price' => 5000],
+            ],
+        ]);
+
+        $response->assertStatus(422);
+        $this->assertSame(0, Sale::count());
+    }
+
+    public function test_payment_method_rejects_a_value_other_than_cash_or_qris(): void
+    {
+        [, $product] = $this->makeWidgetProduct();
+
+        $response = $this->postJson('/api/v1/sales', [
+            'local_uuid' => (string) Str::uuid(),
+            'date' => '2026-08-06',
+            'payment_method' => 'credit_card',
+            'cash_received' => 10000,
+            'change_amount' => 0,
+            'lines' => [
+                ['product_id' => $product->id, 'qty' => 2, 'unit_price' => 5000],
+            ],
+        ]);
+
+        $response->assertStatus(422);
+        $response->assertJsonValidationErrors('payment_method');
     }
 
     public function test_posting_a_sale_deducts_stock_and_returns_the_created_sale(): void

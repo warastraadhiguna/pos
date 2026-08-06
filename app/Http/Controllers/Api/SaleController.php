@@ -35,7 +35,13 @@ class SaleController extends Controller
         $validated = $request->validate([
             'local_uuid' => ['required', 'uuid'],
             'date' => ['required', 'date'],
-            'payment_method' => ['nullable', 'string', 'in:cash'],
+            // 'qris' (Tafsir A -- pencatatan, lihat rancangan fitur QRIS):
+            // mobile TIDAK PERNAH mengirim cash_account_code (tidak ada UI
+            // pemilih akun di HP sama sekali, untuk cash MAUPUN qris) --
+            // SaleService::createSale() meresolve akun Bank tujuannya
+            // sendiri dari Pengaturan (CompanySetting::qris_cash_account_code)
+            // saat payment_method='qris'.
+            'payment_method' => ['nullable', 'string', 'in:cash,qris'],
             // Wajib di endpoint mobile ini (checkout selalu mencatat uang
             // tunai diterima) — beda dari Kasir\SaleController (web) yang
             // tidak mengumpulkan ini sama sekali. SaleService::createSale()

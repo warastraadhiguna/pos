@@ -41,6 +41,7 @@ const statusLabel = {
 
 const paymentLabel = {
     cash: 'Tunai',
+    qris: 'QRIS',
 };
 
 export default function Index({ sales, filters, cashiers, summary }) {
@@ -48,6 +49,7 @@ export default function Index({ sales, filters, cashiers, summary }) {
     const [dateTo, setDateTo] = useState(filters.date_to);
     const [search, setSearch] = useState(filters.search);
     const [cashierId, setCashierId] = useState(filters.cashier_id ?? '');
+    const [paymentMethod, setPaymentMethod] = useState(filters.payment_method ?? '');
 
     const applyFilters = (overrides = {}) => {
         router.get(
@@ -57,6 +59,7 @@ export default function Index({ sales, filters, cashiers, summary }) {
                 date_to: dateTo,
                 search,
                 cashier_id: cashierId,
+                payment_method: paymentMethod,
                 ...overrides,
             },
             { preserveState: true, replace: true },
@@ -75,7 +78,14 @@ export default function Index({ sales, filters, cashiers, summary }) {
         setDateTo(today);
         setSearch('');
         setCashierId('');
-        applyFilters({ date_from: sevenDaysAgo, date_to: today, search: '', cashier_id: '' });
+        setPaymentMethod('');
+        applyFilters({
+            date_from: sevenDaysAgo,
+            date_to: today,
+            search: '',
+            cashier_id: '',
+            payment_method: '',
+        });
     };
 
     return (
@@ -139,6 +149,22 @@ export default function Index({ sales, filters, cashiers, summary }) {
                                 ))}
                             </SelectInput>
                         </div>
+                        <div>
+                            <InputLabel htmlFor="payment_method" value="Metode Bayar" />
+                            <SelectInput
+                                id="payment_method"
+                                className="mt-1 h-10"
+                                value={paymentMethod}
+                                onChange={(e) => {
+                                    setPaymentMethod(e.target.value);
+                                    applyFilters({ payment_method: e.target.value });
+                                }}
+                            >
+                                <option value="">Semua Metode</option>
+                                <option value="cash">Tunai</option>
+                                <option value="qris">QRIS</option>
+                            </SelectInput>
+                        </div>
                         <div className="flex-1 min-w-[200px]">
                             <InputLabel htmlFor="search" value="Cari (No. Transaksi / Produk)" />
                             <TextInput
@@ -176,6 +202,20 @@ export default function Index({ sales, filters, cashiers, summary }) {
                             Total Nilai:{' '}
                             <span className="font-semibold text-gray-900">{formatRupiah(summary.total)}</span>
                         </div>
+                        {/* Rincian per metode -- "berapa QRIS vs tunai" (lihat
+                            rancangan fitur QRIS). Hanya metode yang BENAR-BENAR
+                            punya transaksi pada filter ini yang ditampilkan --
+                            toko yang belum pernah pakai QRIS tidak melihat
+                            "QRIS: Rp0" yang tidak berguna. */}
+                        {summary.by_method.map((row) => (
+                            <div key={row.payment_method} className="text-sm text-gray-600">
+                                {paymentLabel[row.payment_method] ?? row.payment_method}:{' '}
+                                <span className="font-semibold text-gray-900">
+                                    {formatRupiah(row.total)}
+                                </span>{' '}
+                                <span className="text-gray-400">({row.count})</span>
+                            </div>
+                        ))}
                     </div>
 
                     <div className="overflow-hidden bg-white shadow-sm sm:rounded-lg">

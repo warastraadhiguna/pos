@@ -22,6 +22,9 @@ export default function Index({
     showProductImage,
     paymentQuickAmounts,
     cashAccounts,
+    qrisEnabled,
+    qrisCashAccountCode,
+    bankAccounts,
     memberEnabled,
     tableEnabled,
     tables,
@@ -61,8 +64,31 @@ export default function Index({
     // cash_received saat checkout tanpa parsing pemisah ribuan lagi.
     const [cashReceivedInput, setCashReceivedInput] = useState('');
     // Default Kas -- kasir cuma perlu ganti kalau uang benar-benar masuk
-    // ke rekening bank (mis. dibayar QRIS/transfer), bukan laci tunai.
+    // ke rekening bank secara manual (transfer dicatat sebagai tunai, kasus
+    // lama). QRIS TIDAK memakai default ini sama sekali -- lihat
+    // setPaymentMethod di bawah, yang mengganti nilai ini otomatis begitu
+    // metode berpindah.
     const [cashAccountCode, setCashAccountCode] = useState(cashAccounts[0]?.code ?? '');
+    // 'cash' | 'qris' -- opsi 'qris' HANYA relevan kalau qrisEnabled (lihat
+    // JSX toggle di bawah); toko yang tidak mengaktifkannya tidak pernah
+    // melihat opsi ini sama sekali, checkout selalu berperilaku identik
+    // sebelum fitur QRIS ada.
+    const [paymentMethod, setPaymentMethodState] = useState('cash');
+
+    // Ganti metode SEKALIGUS menyesuaikan akun tujuan -- QRIS otomatis ke
+    // akun Bank default (Pengaturan) atau akun Bank pertama, Tunai kembali
+    // ke akun pertama di daftar Kas/Bank (pola sama default awal di atas).
+    // Kasir tetap bisa mengganti akun tujuan manual sesudahnya lewat
+    // dropdown "Masuk Ke" (lihat JSX) -- ini cuma nilai AWAL yang masuk akal
+    // begitu metode berpindah, bukan nilai yang dikunci.
+    const setPaymentMethod = (method) => {
+        setPaymentMethodState(method);
+        if (method === 'qris') {
+            setCashAccountCode(qrisCashAccountCode ?? bankAccounts[0]?.code ?? '');
+        } else {
+            setCashAccountCode(cashAccounts[0]?.code ?? '');
+        }
+    };
     const barcodeRef = useRef(null);
 
     // Transaksi yang baru saja disimpan -- dipakai untuk menawarkan
@@ -289,19 +315,27 @@ export default function Index({
 
     // null (bukan 0) kalau field kosong/bukan angka -- beda dari "kasir
     // sengaja mengetik 0", supaya tombol Bayar nonaktif dengan alasan yang
-    // benar ("belum diisi" vs "kurang").
+    // benar ("belum diisi" vs "kurang"). HANYA relevan untuk Tunai -- QRIS
+    // dibayar PAS lewat scan, tidak ada field "Uang Diterima" sama sekali
+    // (lihat JSX), jadi cashReceived untuk QRIS SELALU grandTotal, bukan
+    // dibaca dari cashReceivedInput (yang bahkan tidak ditampilkan).
     const cashReceived = useMemo(() => {
+        if (paymentMethod === 'qris') return totals.grandTotal;
         const trimmed = cashReceivedInput.trim();
         if (trimmed === '') return null;
         const parsed = Number(trimmed);
         return Number.isFinite(parsed) ? parsed : null;
-    }, [cashReceivedInput]);
+    }, [paymentMethod, cashReceivedInput, totals.grandTotal]);
 
     const changeAmount =
         cashReceived === null ? null : Math.max(0, Math.round(cashReceived - totals.grandTotal));
 
+    // QRIS: valid begitu keranjang tidak kosong (tidak ada uang untuk
+    // dicocokkan). Tunai: tetap seperti sebelumnya.
     const isPaymentValid =
-        cashReceived !== null && cashReceived >= Math.round(totals.grandTotal);
+        paymentMethod === 'qris'
+            ? cart.length > 0
+            : cashReceived !== null && cashReceived >= Math.round(totals.grandTotal);
 
     const setQuickAmount = (amount) => setCashReceivedInput(String(amount));
     const setExactAmount = () => setCashReceivedInput(String(Math.round(totals.grandTotal)));
@@ -313,7 +347,7 @@ export default function Index({
         router.post(
             route('kasir.store'),
             {
-                payment_method: 'cash',
+                payment_method: paymentMethod,
                 cash_received: cashReceived,
                 change_amount: changeAmount,
                 cash_account_code: cashAccountCode,
@@ -355,6 +389,11 @@ export default function Index({
                     setTransactionNote('');
                     setOpenNoteFor(null);
                     setVariationPicker(null);
+                    // Kembali ke Tunai -- QRIS TIDAK "menempel" ke transaksi
+                    // berikutnya, kasir harus memilih ulang tiap kali
+                    // (mencegah transaksi tunai berikutnya diam-diam tercatat
+                    // QRIS cuma karena lupa mengganti balik).
+                    setPaymentMethod('cash');
                 },
                 onFinish: () => setProcessing(false),
             },
@@ -734,7 +773,36 @@ export default function Index({
                             </div>
                         </div>
 
-                        {paymentQuickAmounts?.length > 0 && (
+                        {qrisEnabled && (
+                            <div className="mt-4 flex gap-2">
+                                <button
+                                    type="button"
+                                    onClick={() => setPaymentMethod('cash')}
+                                    className={
+                                        'flex-1 rounded-md border px-3 py-2 text-sm font-medium ' +
+                                        (paymentMethod === 'cash'
+                                            ? 'border-primary bg-primary/10 text-primary'
+                                            : 'border-gray-300 bg-white text-gray-700 hover:border-accent')
+                                    }
+                                >
+                                    Tunai
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => setPaymentMethod('qris')}
+                                    className={
+                                        'flex-1 rounded-md border px-3 py-2 text-sm font-medium ' +
+                                        (paymentMethod === 'qris'
+                                            ? 'border-primary bg-primary/10 text-primary'
+                                            : 'border-gray-300 bg-white text-gray-700 hover:border-accent')
+                                    }
+                                >
+                                    QRIS
+                                </button>
+                            </div>
+                        )}
+
+                        {paymentMethod === 'cash' && paymentQuickAmounts?.length > 0 && (
                             <div className="mt-4 flex flex-wrap gap-2">
                                 {paymentQuickAmounts.map((amount) => (
                                     <button
@@ -756,7 +824,7 @@ export default function Index({
                             </div>
                         )}
 
-                        {cashAccounts.length > 1 && (
+                        {paymentMethod === 'cash' && cashAccounts.length > 1 && (
                             <div className="mt-3">
                                 <InputLabel htmlFor="cash_account_code" value="Masuk Ke" />
                                 <SelectInput
@@ -774,35 +842,70 @@ export default function Index({
                             </div>
                         )}
 
-                        <div className="mt-3">
-                            <InputLabel htmlFor="cash_received" value="Uang Diterima" />
-                            <NumberInput
-                                id="cash_received"
-                                className="mt-1 block w-full"
-                                maxDecimals={0}
-                                value={cashReceivedInput}
-                                onChange={setCashReceivedInput}
-                            />
-                        </div>
+                        {/* QRIS SELALU ke akun Bank -- TIDAK PERNAH Kas (lihat
+                            SaleService::createSale()/InvalidQrisAccountException).
+                            Dropdown cuma muncul kalau ada LEBIH dari satu akun
+                            Bank untuk dipilih; satu akun Bank saja sudah otomatis
+                            terpilih lewat setPaymentMethod, tidak perlu UI tambahan. */}
+                        {paymentMethod === 'qris' && bankAccounts.length > 1 && (
+                            <div className="mt-3">
+                                <InputLabel htmlFor="qris_account_code" value="Masuk Ke (Bank)" />
+                                <SelectInput
+                                    id="qris_account_code"
+                                    className="mt-1 h-10 block w-full"
+                                    value={cashAccountCode}
+                                    onChange={(e) => setCashAccountCode(e.target.value)}
+                                >
+                                    {bankAccounts.map((account) => (
+                                        <option key={account.code} value={account.code}>
+                                            {account.name}
+                                        </option>
+                                    ))}
+                                </SelectInput>
+                            </div>
+                        )}
 
-                        <div className="mt-2 flex justify-between text-sm">
-                            <span className="text-gray-600">Kembalian</span>
-                            <span
-                                className={
-                                    'font-semibold ' +
-                                    (cashReceived !== null && !isPaymentValid
-                                        ? 'text-red-600'
-                                        : 'text-gray-900')
-                                }
-                            >
-                                {changeAmount === null
-                                    ? '-'
-                                    : formatRupiah(changeAmount)}
-                            </span>
-                        </div>
-                        {cashReceived !== null && !isPaymentValid && (
-                            <p className="text-xs text-red-600">
-                                Uang diterima kurang dari total.
+                        {paymentMethod === 'cash' && (
+                            <>
+                                <div className="mt-3">
+                                    <InputLabel htmlFor="cash_received" value="Uang Diterima" />
+                                    <NumberInput
+                                        id="cash_received"
+                                        className="mt-1 block w-full"
+                                        maxDecimals={0}
+                                        value={cashReceivedInput}
+                                        onChange={setCashReceivedInput}
+                                    />
+                                </div>
+
+                                <div className="mt-2 flex justify-between text-sm">
+                                    <span className="text-gray-600">Kembalian</span>
+                                    <span
+                                        className={
+                                            'font-semibold ' +
+                                            (cashReceived !== null && !isPaymentValid
+                                                ? 'text-red-600'
+                                                : 'text-gray-900')
+                                        }
+                                    >
+                                        {changeAmount === null
+                                            ? '-'
+                                            : formatRupiah(changeAmount)}
+                                    </span>
+                                </div>
+                                {cashReceived !== null && !isPaymentValid && (
+                                    <p className="text-xs text-red-600">
+                                        Uang diterima kurang dari total.
+                                    </p>
+                                )}
+                            </>
+                        )}
+
+                        {paymentMethod === 'qris' && (
+                            <p className="mt-3 text-sm text-gray-500">
+                                Pastikan pelanggan sudah scan &amp; membayar
+                                lewat QRIS sebelum menekan tombol di bawah --
+                                dibayar pas, tidak ada uang diterima/kembalian.
                             </p>
                         )}
 
@@ -811,7 +914,9 @@ export default function Index({
                             disabled={cart.length === 0 || processing || !isPaymentValid}
                             onClick={checkout}
                         >
-                            Bayar (Cash)
+                            {paymentMethod === 'qris'
+                                ? 'Konfirmasi Sudah Bayar (QRIS)'
+                                : 'Bayar (Tunai)'}
                         </PrimaryButton>
 
                         {lastSaleId && (

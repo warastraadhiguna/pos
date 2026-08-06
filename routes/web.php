@@ -95,6 +95,7 @@ Route::middleware(['auth', 'verified', 'permission:company-settings.manage'])->p
     Route::put('/catatan', [SettingController::class, 'updateNoteEnabled'])->name('catatan.update');
     Route::put('/variasi', [SettingController::class, 'updateVariationEnabled'])->name('variasi.update');
     Route::put('/draft', [SettingController::class, 'updateDraftEnabled'])->name('draft.update');
+    Route::put('/qris', [SettingController::class, 'updateQris'])->name('qris.update');
 });
 
 Route::middleware(['auth', 'verified', 'permission:master-data.manage'])->prefix('master')->name('master.')->group(function () {

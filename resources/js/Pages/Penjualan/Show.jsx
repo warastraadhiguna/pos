@@ -34,6 +34,7 @@ const statusLabel = {
 
 const paymentLabel = {
     cash: 'Tunai',
+    qris: 'QRIS',
 };
 
 export default function Show({ sale }) {

@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Exceptions\InvalidQrisAccountException;
 use App\Models\Account;
 use App\Models\CompanySetting;
 use App\Models\DiningTable;
@@ -384,6 +385,135 @@ class SaleServiceTest extends TestCase
 
         $this->assertSame(0, bccomp($lines['1-1100']->debit, '5000', 4));
         $this->assertFalse($lines->has('1-1000'));
+    }
+
+    // --- QRIS (Tafsir A -- pencatatan): akun tujuan SELALU Bank, tidak pernah Kas ---
+
+    public function test_qris_sale_with_no_cash_account_code_sent_resolves_the_configured_bank_account(): void
+    {
+        // Mobile TIDAK PERNAH mengirim cash_account_code sama sekali (lihat
+        // docblock SaleService::createSale()) -- server meresolve dari
+        // Pengaturan.
+        CompanySetting::current()->update(['qris_cash_account_code' => '1-1100']);
+        $product = Product::create(['name' => 'Kopi QRIS', 'sell_price' => 20000]);
+
+        $sale = $this->sales->createSale([
+            'outlet_id' => $this->outlet->id,
+            'warehouse_id' => $this->warehouse->id,
+            'date' => '2026-08-06',
+            'payment_method' => 'qris',
+            'lines' => [['product_id' => $product->id, 'qty' => 1, 'unit_price' => 20000]],
+        ]);
+
+        $this->assertSame('qris', $sale->payment_method);
+        $this->assertSame('1-1100', $sale->cash_account_code);
+
+        $journal = Journal::where('source_type', Sale::class)->where('source_id', $sale->id)->firstOrFail();
+        $lines = $journal->lines()->with('account')->get()->keyBy(fn (JournalLine $line) => $line->account->code);
+
+        $this->assertSame(0, bccomp($lines['1-1100']->debit, '20000', 4), 'Uang QRIS harus mendarat di akun Bank (Dr Bank).');
+        $this->assertFalse($lines->has('1-1000'), 'Kas TIDAK BOLEH ikut tersentuh sama sekali oleh sale QRIS.');
+    }
+
+    public function test_qris_sale_with_an_explicit_bank_account_from_web_kasir_is_accepted(): void
+    {
+        // Web Kasir SELALU mengirim cash_account_code eksplisit (picker
+        // "Masuk Ke", dibatasi ke akun Bank saat QRIS dipilih di UI) --
+        // beda dari mobile, tapi hasilnya harus sama: Bank, bukan Kas.
+        $product = Product::create(['name' => 'Kopi QRIS', 'sell_price' => 20000]);
+
+        $sale = $this->sales->createSale([
+            'outlet_id' => $this->outlet->id,
+            'warehouse_id' => $this->warehouse->id,
+            'date' => '2026-08-06',
+            'payment_method' => 'qris',
+            'cash_account_code' => '1-1100',
+            'lines' => [['product_id' => $product->id, 'qty' => 1, 'unit_price' => 20000]],
+        ]);
+
+        $this->assertSame('1-1100', $sale->cash_account_code);
+    }
+
+    public function test_qris_sale_without_any_configured_bank_account_throws(): void
+    {
+        // qris_cash_account_code NULL (belum pernah diatur di Pengaturan)
+        // DAN caller tidak mengirim cash_account_code sendiri (kasus
+        // mobile) -- tidak ada akun tujuan sama sekali untuk diresolve.
+        $this->assertNull(CompanySetting::current()->qris_cash_account_code);
+        $product = Product::create(['name' => 'Kopi QRIS', 'sell_price' => 20000]);
+
+        $this->expectException(InvalidQrisAccountException::class);
+
+        $this->sales->createSale([
+            'outlet_id' => $this->outlet->id,
+            'warehouse_id' => $this->warehouse->id,
+            'date' => '2026-08-06',
+            'payment_method' => 'qris',
+            'lines' => [['product_id' => $product->id, 'qty' => 1, 'unit_price' => 20000]],
+        ]);
+    }
+
+    public function test_qris_sale_explicitly_targeting_kas_is_rejected(): void
+    {
+        // Skenario tepi berbahaya: caller (mis. bug di klien, atau request
+        // dipalsukan) mengirim payment_method=qris TAPI cash_account_code
+        // Kas secara eksplisit -- inti fitur QRIS (uang SELALU ke bank)
+        // harus tetap ditegakkan di server, tidak boleh percaya klien.
+        $product = Product::create(['name' => 'Kopi QRIS', 'sell_price' => 20000]);
+
+        $this->expectException(InvalidQrisAccountException::class);
+
+        $this->sales->createSale([
+            'outlet_id' => $this->outlet->id,
+            'warehouse_id' => $this->warehouse->id,
+            'date' => '2026-08-06',
+            'payment_method' => 'qris',
+            'cash_account_code' => '1-1000',
+            'lines' => [['product_id' => $product->id, 'qty' => 1, 'unit_price' => 20000]],
+        ]);
+    }
+
+    public function test_qris_sale_ignores_client_cash_received_and_change_amount_entirely(): void
+    {
+        // QRIS dibayar PAS lewat scan -- cash_received/change_amount yang
+        // dikirim caller (kalau ada) diabaikan sepenuhnya, TIDAK
+        // divalidasi seperti Tunai. Di sini caller mengirim cash_received
+        // yang jauh KURANG dari total (yang untuk Tunai akan melempar
+        // InsufficientCashReceivedException) -- sale QRIS tetap harus
+        // sukses, dipaksa pas oleh server sendiri.
+        $product = Product::create(['name' => 'Kopi QRIS', 'sell_price' => 20000]);
+
+        $sale = $this->sales->createSale([
+            'outlet_id' => $this->outlet->id,
+            'warehouse_id' => $this->warehouse->id,
+            'date' => '2026-08-06',
+            'payment_method' => 'qris',
+            'cash_account_code' => '1-1100',
+            'cash_received' => 1000, // jauh kurang dari grand_total (20000)
+            'change_amount' => 0,
+            'lines' => [['product_id' => $product->id, 'qty' => 1, 'unit_price' => 20000]],
+        ]);
+
+        $this->assertSame(0, bccomp($sale->cash_received, '20000', 4), 'cash_received QRIS harus dipaksa = grand_total, mengabaikan kiriman caller.');
+        $this->assertSame(0, bccomp($sale->change_amount, '0', 4));
+    }
+
+    public function test_cash_sale_still_defaults_to_kas_even_when_a_qris_bank_account_is_configured(): void
+    {
+        // Regresi: mengaktifkan/mengatur QRIS TIDAK BOLEH mengubah
+        // perilaku default Tunai sama sekali -- keduanya independen.
+        CompanySetting::current()->update(['qris_cash_account_code' => '1-1100']);
+        $product = Product::create(['name' => 'Kopi Tunai', 'sell_price' => 20000]);
+
+        $sale = $this->sales->createSale([
+            'outlet_id' => $this->outlet->id,
+            'warehouse_id' => $this->warehouse->id,
+            'date' => '2026-08-06',
+            'payment_method' => 'cash',
+            'lines' => [['product_id' => $product->id, 'qty' => 1, 'unit_price' => 20000]],
+        ]);
+
+        $this->assertSame('1-1000', $sale->cash_account_code);
     }
 
     public function test_ppn_switch_off_produces_no_tax_even_for_a_taxable_product(): void

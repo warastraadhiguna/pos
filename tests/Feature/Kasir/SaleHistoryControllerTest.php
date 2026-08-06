@@ -65,6 +65,23 @@ class SaleHistoryControllerTest extends TestCase
         ]);
     }
 
+    private function makeQrisSale(string $date, ?int $cashierId, string $productName, float $price): Sale
+    {
+        $product = Product::create(['name' => $productName, 'sell_price' => $price]);
+
+        return $this->sales->createSale([
+            'outlet_id' => $this->outlet->id,
+            'warehouse_id' => $this->warehouse->id,
+            'created_by_user_id' => $cashierId,
+            'date' => $date,
+            'payment_method' => 'qris',
+            'cash_account_code' => '1-1100',
+            'lines' => [
+                ['product_id' => $product->id, 'qty' => 1, 'unit_price' => $price],
+            ],
+        ]);
+    }
+
     public function test_index_defaults_to_the_last_7_days(): void
     {
         $this->actingAsAuthorizedUser();
@@ -193,6 +210,69 @@ class SaleHistoryControllerTest extends TestCase
         $response->assertInertia(fn ($page) => $page
             ->where('summary.count', 2)
             ->where('summary.total', fn ($total) => bccomp($total, '35000.5000', 4) === 0),
+        );
+    }
+
+    public function test_payment_method_filter_only_shows_sales_with_the_selected_method(): void
+    {
+        $this->actingAsAuthorizedUser();
+
+        $cash = $this->makeSale('2026-08-06', null, 'Kopi Tunai', 10000);
+        $qris = $this->makeQrisSale('2026-08-06', null, 'Kopi QRIS', 15000);
+
+        $response = $this->get(route('penjualan.index', [
+            'date_from' => '2026-08-06', 'date_to' => '2026-08-06', 'payment_method' => 'qris',
+        ]));
+
+        $response->assertInertia(fn ($page) => $page
+            ->where('sales', fn ($sales) => collect($sales)->pluck('id')->contains($qris->id)
+                && ! collect($sales)->pluck('id')->contains($cash->id)),
+        );
+    }
+
+    /**
+     * "Berapa QRIS vs Tunai" pada rentang filter yang aktif -- lihat
+     * rancangan fitur QRIS. Rekonsiliasi: total QRIS di sini HARUS sama
+     * dengan bertambahnya saldo akun Bank (dibuktikan di SaleServiceTest
+     * lewat journal_lines langsung; di sini cukup membuktikan angka
+     * ringkasannya sendiri benar per bcmath, bukan float).
+     */
+    public function test_summary_by_method_breaks_down_totals_per_payment_method(): void
+    {
+        $this->actingAsAuthorizedUser();
+
+        $this->makeSale('2026-08-06', null, 'Kopi Tunai 1', 10000);
+        $this->makeSale('2026-08-06', null, 'Kopi Tunai 2', 5000.5);
+        $this->makeQrisSale('2026-08-06', null, 'Kopi QRIS', 15000);
+        $this->makeSale('2026-08-01', null, 'Di Luar Rentang', 999999);
+
+        $response = $this->get(route('penjualan.index', ['date_from' => '2026-08-06', 'date_to' => '2026-08-06']));
+
+        $response->assertInertia(fn ($page) => $page
+            ->where('summary.count', 3)
+            ->where('summary.by_method', function ($byMethod) {
+                $keyed = collect($byMethod)->keyBy('payment_method');
+
+                $this->assertSame(2, $keyed['cash']['count']);
+                $this->assertSame(0, bccomp($keyed['cash']['total'], '15000.5000', 4));
+                $this->assertSame(1, $keyed['qris']['count']);
+                $this->assertSame(0, bccomp($keyed['qris']['total'], '15000.0000', 4));
+
+                return true;
+            }),
+        );
+    }
+
+    public function test_summary_by_method_omits_methods_with_no_transactions_in_the_filtered_range(): void
+    {
+        $this->actingAsAuthorizedUser();
+
+        $this->makeSale('2026-08-06', null, 'Kopi Tunai', 10000);
+
+        $response = $this->get(route('penjualan.index', ['date_from' => '2026-08-06', 'date_to' => '2026-08-06']));
+
+        $response->assertInertia(fn ($page) => $page
+            ->where('summary.by_method', fn ($byMethod) => collect($byMethod)->pluck('payment_method')->all() === ['cash']),
         );
     }
 

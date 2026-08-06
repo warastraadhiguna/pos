@@ -486,4 +486,91 @@ class SaleControllerTest extends TestCase
         $sale = Sale::firstOrFail();
         $this->assertSame('1-1100', $sale->cash_account_code);
     }
+
+    // --- QRIS (Tafsir A -- pencatatan) ---
+
+    public function test_checkout_with_qris_and_an_explicit_bank_account_stores_qris_and_the_bank_code(): void
+    {
+        $this->actingAsKasir();
+        $product = Product::create(['name' => 'Kopi QRIS', 'sell_price' => 15000]);
+
+        // Kasir web SELALU mengirim cash_received/change_amount (field
+        // "pas" yang dipaksa client-side lewat setPaymentMethod, lihat
+        // Kasir/Index.jsx) walau field-nya disembunyikan untuk QRIS --
+        // server mengabaikannya sepenuhnya untuk QRIS (lihat SaleServiceTest).
+        $response = $this->post('/kasir', [
+            'payment_method' => 'qris',
+            'cash_received' => 15000,
+            'change_amount' => 0,
+            'cash_account_code' => '1-1100',
+            'lines' => [
+                ['product_id' => $product->id, 'qty' => 1, 'unit_price' => 15000],
+            ],
+        ]);
+
+        $response->assertRedirect(route('kasir.index'));
+        $sale = Sale::firstOrFail();
+        $this->assertSame('qris', $sale->payment_method);
+        $this->assertSame('1-1100', $sale->cash_account_code);
+    }
+
+    public function test_checkout_with_qris_targeting_kas_is_rejected_and_no_sale_is_created(): void
+    {
+        $this->actingAsKasir();
+        $product = Product::create(['name' => 'Kopi QRIS', 'sell_price' => 15000]);
+
+        $response = $this->post('/kasir', [
+            'payment_method' => 'qris',
+            'cash_received' => 15000,
+            'change_amount' => 0,
+            'cash_account_code' => '1-1000',
+            'lines' => [
+                ['product_id' => $product->id, 'qty' => 1, 'unit_price' => 15000],
+            ],
+        ]);
+
+        $response->assertRedirect(route('kasir.index'));
+        $response->assertSessionHas('error');
+        $this->assertSame(0, Sale::count());
+    }
+
+    public function test_payment_method_rejects_a_value_other_than_cash_or_qris(): void
+    {
+        $this->actingAsKasir();
+        $product = Product::create(['name' => 'Kopi', 'sell_price' => 10000]);
+
+        $response = $this->post('/kasir', [
+            'payment_method' => 'credit_card',
+            'cash_received' => 10000,
+            'change_amount' => 0,
+            'lines' => [
+                ['product_id' => $product->id, 'qty' => 1, 'unit_price' => 10000],
+            ],
+        ]);
+
+        $response->assertSessionHasErrors('payment_method');
+        $this->assertSame(0, Sale::count());
+    }
+
+    public function test_index_page_exposes_qris_settings_and_bank_only_accounts(): void
+    {
+        CompanySetting::current()->update([
+            'qris_enabled' => true,
+            'qris_cash_account_code' => '1-1100',
+        ]);
+        $this->actingAsKasir();
+
+        $response = $this->get('/kasir');
+
+        $response->assertOk();
+        $response->assertInertia(fn ($page) => $page
+            ->component('Kasir/Index')
+            ->where('qrisEnabled', true)
+            ->where('qrisCashAccountCode', '1-1100')
+            // bankAccounts HARUS bank-saja -- Kas tidak boleh muncul di
+            // sini sama sekali, lihat CashAccountService::selectableBankAccounts().
+            ->where('bankAccounts', fn ($accounts) => collect($accounts)->pluck('code')->contains('1-1100')
+                && ! collect($accounts)->pluck('code')->contains('1-1000')),
+        );
+    }
 }

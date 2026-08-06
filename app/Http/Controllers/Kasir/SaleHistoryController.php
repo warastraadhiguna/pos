@@ -19,9 +19,11 @@ class SaleHistoryController extends Controller
      * sengaja jadi filter dropdown TERPISAH, bukan bagian dari search
      * bebas: himpunan kasir kecil & pasti (di-lookup by ID), jadi dropdown
      * lebih presisi daripada pencocokan nama sebagian yang bisa ambigu
-     * antar-kasir yang namanya mirip. Metode bayar TIDAK dijadikan filter
-     * -- saat ini payment_method selalu 'cash' (lihat SaleService), jadi
-     * filter itu tidak akan pernah punya nilai pembeda.
+     * antar-kasir yang namanya mirip. Metode bayar (payment_method) JUGA
+     * filter dropdown terpisah sejak fitur QRIS ada -- lihat
+     * `summary.by_method` untuk ringkasan "berapa QRIS vs Tunai" pada
+     * rentang filter yang sedang aktif, tanpa perlu memilih salah satu
+     * metode dulu.
      */
     public function index(Request $request): Response
     {
@@ -30,6 +32,7 @@ class SaleHistoryController extends Controller
             'date_to' => ['nullable', 'date'],
             'search' => ['nullable', 'string', 'max:255'],
             'cashier_id' => ['nullable', 'integer'],
+            'payment_method' => ['nullable', 'string', 'in:cash,qris'],
         ]);
 
         // Riwayat penjualan dicek jauh lebih sering & bervolume lebih
@@ -40,11 +43,13 @@ class SaleHistoryController extends Controller
         $dateTo = $filters['date_to'] ?? now()->toDateString();
         $search = $filters['search'] ?? '';
         $cashierId = $filters['cashier_id'] ?? null;
+        $paymentMethod = $filters['payment_method'] ?? null;
 
         $query = Sale::query()
             ->whereDate('date', '>=', $dateFrom)
             ->whereDate('date', '<=', $dateTo)
             ->when($cashierId, fn ($q) => $q->where('created_by_user_id', $cashierId))
+            ->when($paymentMethod, fn ($q) => $q->where('payment_method', $paymentMethod))
             ->when($search !== '', function ($q) use ($search) {
                 $saleId = ltrim(trim($search), '#');
 
@@ -66,6 +71,22 @@ class SaleHistoryController extends Controller
         // melanggar disiplin uang di seluruh sistem ini.
         $total = $sales->reduce(fn (string $carry, Sale $sale) => bcadd($carry, $sale->grand_total, 4), '0');
 
+        // "Berapa QRIS vs Tunai" pada rentang/filter yang SAMA dengan
+        // daftar di atas -- dikelompokkan dari koleksi yang sudah dimuat
+        // (bukan query agregat terpisah), supaya SELALU konsisten dengan
+        // apa yang benar-benar tampil di tabel, terlepas dari
+        // payment_method mana pun yang ditambahkan ke sistem ini nanti
+        // (tidak hardcode 'cash'/'qris' di sini).
+        $byMethod = $sales
+            ->groupBy('payment_method')
+            ->map(fn ($group, string $method) => [
+                'payment_method' => $method,
+                'count' => $group->count(),
+                'total' => $group->reduce(fn (string $carry, Sale $sale) => bcadd($carry, $sale->grand_total, 4), '0'),
+            ])
+            ->sortKeys()
+            ->values();
+
         return Inertia::render('Penjualan/Index', [
             'sales' => $sales,
             'filters' => [
@@ -73,6 +94,7 @@ class SaleHistoryController extends Controller
                 'date_to' => $dateTo,
                 'search' => $search,
                 'cashier_id' => $cashierId,
+                'payment_method' => $paymentMethod,
             ],
             'cashiers' => User::whereIn('id', Sale::query()->whereNotNull('created_by_user_id')->distinct()->pluck('created_by_user_id'))
                 ->orderBy('name')
@@ -80,6 +102,7 @@ class SaleHistoryController extends Controller
             'summary' => [
                 'count' => $sales->count(),
                 'total' => $total,
+                'by_method' => $byMethod,
             ],
         ]);
     }

@@ -44,6 +44,26 @@ class CashAccountService
     }
 
     /**
+     * Same as selectableCashAccounts() but excludes Kas -- for pickers that
+     * only ever make sense pointed at a BANK account specifically: the
+     * QRIS default account in Pengaturan, and the "Masuk Ke" picker in
+     * Kasir web when payment_method=qris (see rancangan fitur QRIS,
+     * SaleService::createSale()). Kas is always selectableCashAccounts()'s
+     * first row (code '1-1000' sorts first alphabetically among '1-1xxx'
+     * codes) -- filtered out by code rather than by array position so this
+     * stays correct even if that ordering assumption ever changes.
+     *
+     * @return array<int, Account>
+     */
+    public function selectableBankAccounts(): array
+    {
+        return array_values(array_filter(
+            $this->selectableCashAccounts(),
+            fn (Account $account) => $account->code !== self::DEFAULT_CODE,
+        ));
+    }
+
+    /**
      * @throws InvalidArgumentException if $code isn't an active child of the Kas & Bank group.
      */
     public function assertValidCashAccount(string $code): void

@@ -29,6 +29,14 @@ const formatDateTimeWIB = (occurredAt, fallbackDate) => {
 // di mobile, supaya "No:" di struk web & mobile untuk transaksi yang sama terlihat identik.
 const shortUuid = (localUuid) => (localUuid ? localUuid.split('-')[0].toUpperCase() : '');
 
+// Sama pola paymentLabel di Penjualan/Index.jsx/Show.jsx (duplikasi kecil
+// yang sudah diterima di codebase ini) -- fallback ke kode metode APA
+// ADANYA kalau ada metode baru yang belum dipetakan di sini, BUKAN diam-
+// diam menampilkan "Tunai (Cash)" untuk metode lain (bug yang baru
+// diperbaiki: baris ini SEBELUMNYA hardcode "Tunai (Cash)" apa pun
+// payment_method sale-nya).
+const paymentLabel = { cash: 'Tunai (Cash)', qris: 'QRIS' };
+
 function Row({ label, value, bold = false }) {
     return (
         <div className={`flex justify-between ${bold ? 'font-bold' : ''}`}>
@@ -112,9 +120,20 @@ export default function Receipt({ sale, store }) {
                         baris kena pajak", persis ReceiptFormatter di mobile. */}
                     {hasTax && <Row label="Termasuk PPN" value={formatRupiah(sale.tax_total)} />}
                     <Row label="TOTAL" value={formatRupiah(sale.grand_total)} bold />
-                    <Row label="Metode" value="Tunai (Cash)" />
-                    <Row label="Uang Diterima" value={formatRupiah(sale.cash_received)} />
-                    <Row label="Kembali" value={formatRupiah(sale.change_amount)} />
+                    <Row
+                        label="Metode"
+                        value={paymentLabel[sale.payment_method] ?? sale.payment_method}
+                    />
+                    {/* QRIS dibayar PAS lewat scan -- tidak ada konsep uang
+                        diterima/kembalian sama sekali (lihat rancangan fitur
+                        QRIS & SaleService::createSale()), jadi baris ini
+                        cuma relevan untuk Tunai. */}
+                    {sale.payment_method !== 'qris' && (
+                        <>
+                            <Row label="Uang Diterima" value={formatRupiah(sale.cash_received)} />
+                            <Row label="Kembali" value={formatRupiah(sale.change_amount)} />
+                        </>
+                    )}
 
                     <div className="my-1 border-t border-dashed border-gray-900" />
 

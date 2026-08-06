@@ -4,11 +4,13 @@ namespace App\Http\Controllers;
 
 use App\Models\CompanySetting;
 use App\Models\CompanySettingLog;
+use App\Services\CashAccountService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Redirect;
 use Inertia\Inertia;
 use Inertia\Response;
+use InvalidArgumentException;
 
 /**
  * Halaman "Pengaturan" tunggal untuk seluruh setting toko (bukan cuma
@@ -17,6 +19,8 @@ use Inertia\Response;
  */
 class SettingController extends Controller
 {
+    public function __construct(private readonly CashAccountService $cashAccounts) {}
+
     public function index(): Response
     {
         $setting = CompanySetting::current();
@@ -47,6 +51,15 @@ class SettingController extends Controller
             'noteEnabled' => $setting->note_enabled,
             'variationEnabled' => $setting->variation_enabled,
             'draftEnabled' => $setting->draft_enabled,
+            'qrisEnabled' => $setting->qris_enabled,
+            'qrisCashAccountCode' => $setting->qris_cash_account_code,
+            // Bank-saja (tanpa Kas) -- QRIS TIDAK PERNAH boleh mengarah ke
+            // Kas, lihat CashAccountService::selectableBankAccounts()/
+            // InvalidQrisAccountException. Selalu dimuat (murah), pola sama
+            // `tables`/`noteTemplates` di Kasir\SaleController -- daftar
+            // sudah siap begitu admin baru menambah akun Bank pertamanya,
+            // tanpa reload halaman.
+            'bankAccounts' => $this->cashAccounts->selectableBankAccounts(),
             'logs' => $logs,
         ]);
     }
@@ -333,6 +346,65 @@ class SettingController extends Controller
             $data['draft_enabled']
                 ? 'Fitur Draft diaktifkan.'
                 : 'Fitur Draft dimatikan — tidak akan muncul di kasir.',
+        );
+    }
+
+    /**
+     * Saklar global metode pembayaran QRIS (Tafsir A -- pencatatan, BUKAN
+     * integrasi payment gateway; lihat rancangan fitur QRIS) + akun Bank
+     * TUJUANNYA, dikirim SEKALIGUS dalam satu submit (pola sama
+     * updateKasirDisplay() di atas) -- keduanya saling bergantung, tidak
+     * masuk akal mengaktifkan QRIS tanpa akun tujuan atau sebaliknya.
+     *
+     * qris_cash_account_code WAJIB diisi saat qris_enabled diaktifkan, dan
+     * validasi custom di bawah menolaknya kalau kode akun itu bukan akun
+     * Bank aktif (via CashAccountService::assertValidCashAccount()) ATAU
+     * ternyata Kas sendiri (CashAccountService::DEFAULT_CODE) -- inti fitur
+     * QRIS adalah uangnya SELALU mendarat di rekening bank, tidak pernah
+     * fisik di laci tunai (lihat InvalidQrisAccountException, yang menolak
+     * hal yang sama lagi di SaleService::createSale() sebagai jaring
+     * pengaman kedua saat transaksi sungguhan dibuat). Sengaja TIDAK
+     * dicatat ke company_setting_logs, pola sama toggle fitur lain di file
+     * ini (member/table/note/variation/draft) -- beda dari PPN yang
+     * berstatus hukum.
+     */
+    public function updateQris(Request $request): RedirectResponse
+    {
+        $data = $request->validate([
+            'qris_enabled' => ['required', 'boolean'],
+            'qris_cash_account_code' => [
+                $request->boolean('qris_enabled') ? 'required' : 'nullable',
+                'nullable',
+                'string',
+                'max:20',
+                function (string $attribute, mixed $value, \Closure $fail) {
+                    if ($value === null) {
+                        return;
+                    }
+                    if ($value === CashAccountService::DEFAULT_CODE) {
+                        $fail('Akun tujuan QRIS tidak boleh akun Kas -- pilih akun Bank.');
+
+                        return;
+                    }
+                    try {
+                        $this->cashAccounts->assertValidCashAccount($value);
+                    } catch (InvalidArgumentException $e) {
+                        $fail($e->getMessage());
+                    }
+                },
+            ],
+        ]);
+
+        CompanySetting::current()->update([
+            'qris_enabled' => $data['qris_enabled'],
+            'qris_cash_account_code' => $data['qris_cash_account_code'] ?? null,
+        ]);
+
+        return Redirect::route('pengaturan.index')->with(
+            'success',
+            $data['qris_enabled']
+                ? 'Metode pembayaran QRIS diaktifkan.'
+                : 'Metode pembayaran QRIS dimatikan — tidak akan muncul di kasir.',
         );
     }
 }

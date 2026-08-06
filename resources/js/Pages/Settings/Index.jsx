@@ -34,6 +34,9 @@ export default function Index({
     noteEnabled,
     variationEnabled,
     draftEnabled,
+    qrisEnabled,
+    qrisCashAccountCode,
+    bankAccounts,
     logs,
 }) {
     const [confirming, setConfirming] = useState(false);
@@ -71,6 +74,16 @@ export default function Index({
 
     const [draftOn, setDraftOn] = useState(draftEnabled);
     const [savingDraftEnabled, setSavingDraftEnabled] = useState(false);
+
+    const [qrisOn, setQrisOn] = useState(qrisEnabled);
+    // '' (bukan null) supaya cocok dengan value <SelectInput> -- default ke
+    // akun Bank pertama kalau belum pernah diatur & sudah ada minimal satu
+    // akun Bank, sama seperti default cashAccountCode di Kasir/Index.jsx.
+    const [qrisAccountCode, setQrisAccountCode] = useState(
+        qrisCashAccountCode ?? bankAccounts[0]?.code ?? '',
+    );
+    const [savingQris, setSavingQris] = useState(false);
+    const qrisErrors = usePage().props.errors ?? {};
 
     // String (bukan number) di state INPUT supaya kolom bisa dikosongkan
     // sementara saat diketik ulang tanpa langsung jadi "0" -- dikonversi
@@ -282,6 +295,35 @@ export default function Index({
                 preserveScroll: true,
                 onError: () => setDraftOn(previous),
                 onFinish: () => setSavingDraftEnabled(false),
+            },
+        );
+    };
+
+    // Toggle QRIS DAN akun tujuan dikirim SEKALIGUS (bukan dua submit
+    // terpisah seperti toggle lain) -- keduanya saling bergantung, lihat
+    // docblock SettingController::updateQris(). Dipanggil baik dari
+    // checkbox (toggle) maupun dropdown akun (ganti akun tanpa mengubah
+    // status aktif) via [overrides].
+    const submitQris = (overrides = {}) => {
+        if (savingQris) return;
+        const next = { qrisOn, qrisAccountCode, ...overrides };
+        const previous = { qrisOn, qrisAccountCode };
+        setQrisOn(next.qrisOn);
+        setQrisAccountCode(next.qrisAccountCode);
+        setSavingQris(true);
+        router.put(
+            route('pengaturan.qris.update'),
+            {
+                qris_enabled: next.qrisOn,
+                qris_cash_account_code: next.qrisAccountCode || null,
+            },
+            {
+                preserveScroll: true,
+                onError: () => {
+                    setQrisOn(previous.qrisOn);
+                    setQrisAccountCode(previous.qrisAccountCode);
+                },
+                onFinish: () => setSavingQris(false),
             },
         );
     };
@@ -901,6 +943,91 @@ export default function Index({
                                     </span>
                                 </span>
                             </label>
+                        </div>
+                    </section>
+
+                    <hr className="border-gray-200" />
+
+                    <section>
+                        <h3 className="mb-3 text-base font-semibold text-gray-900">
+                            QRIS
+                        </h3>
+                        <div className="rounded-lg bg-white p-6 shadow-sm ring-1 ring-gray-200">
+                            <label className="flex cursor-pointer items-start gap-3">
+                                <input
+                                    type="checkbox"
+                                    className="mt-1 rounded text-primary focus:ring-primary"
+                                    checked={qrisOn}
+                                    disabled={savingQris || bankAccounts.length === 0}
+                                    onChange={(e) =>
+                                        submitQris({ qrisOn: e.target.checked })
+                                    }
+                                />
+                                <span>
+                                    <span className="block font-medium text-gray-900">
+                                        Aktifkan metode pembayaran QRIS
+                                    </span>
+                                    <span className="block text-sm text-gray-500">
+                                        Pencatatan saja — TIDAK ada QR
+                                        dinamis/integrasi payment gateway.
+                                        Toko tetap pakai QR statis yang sudah
+                                        dicetak dari bank/e-wallet sendiri;
+                                        kasir cuma mengonfirmasi "sudah
+                                        dibayar" setelah pelanggan scan &amp;
+                                        transfer. Uang QRIS dicatat masuk ke
+                                        akun Bank di bawah (BUKAN Kas), sama
+                                        seperti transfer bank biasa. Kalau
+                                        mati, opsi QRIS tidak muncul sama
+                                        sekali di kasir manapun.
+                                    </span>
+                                </span>
+                            </label>
+
+                            {bankAccounts.length === 0 ? (
+                                <p className="mt-4 border-t border-gray-100 pt-4 text-sm text-gray-500">
+                                    Belum ada akun Bank.{' '}
+                                    <Link
+                                        href={route('kas-bank.accounts.index')}
+                                        className="text-primary hover:underline"
+                                    >
+                                        Tambah akun Bank
+                                    </Link>{' '}
+                                    dulu sebelum mengaktifkan QRIS — uang
+                                    QRIS harus mendarat di rekening bank,
+                                    bukan Kas.
+                                </p>
+                            ) : (
+                                <div className="mt-4 border-t border-gray-100 pt-4">
+                                    <InputLabel
+                                        htmlFor="qris_cash_account_code"
+                                        value="Akun Bank tujuan QRIS"
+                                    />
+                                    <SelectInput
+                                        id="qris_cash_account_code"
+                                        className="mt-1 h-10 block w-full max-w-xs"
+                                        value={qrisAccountCode}
+                                        disabled={savingQris}
+                                        onChange={(e) =>
+                                            submitQris({
+                                                qrisAccountCode: e.target.value,
+                                            })
+                                        }
+                                    >
+                                        {bankAccounts.map((account) => (
+                                            <option
+                                                key={account.code}
+                                                value={account.code}
+                                            >
+                                                {account.name}
+                                            </option>
+                                        ))}
+                                    </SelectInput>
+                                    <InputError
+                                        message={qrisErrors.qris_cash_account_code}
+                                        className="mt-1"
+                                    />
+                                </div>
+                            )}
                         </div>
                     </section>
                 </div>

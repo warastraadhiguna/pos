@@ -61,6 +61,14 @@ class SaleController extends Controller
             'showProductImage' => $setting->show_product_image,
             'paymentQuickAmounts' => $setting->payment_quick_amounts,
             'cashAccounts' => $this->cashAccounts->selectableCashAccounts(),
+            // QRIS (Tafsir A -- pencatatan, lihat rancangan fitur QRIS):
+            // qrisEnabled menggerbangi apakah toggle Tunai/QRIS muncul sama
+            // sekali di kasir; bankAccounts (Bank-saja, tanpa Kas) mengisi
+            // pemilih "Masuk Ke" begitu QRIS dipilih -- uang QRIS TIDAK
+            // PERNAH boleh mengarah ke Kas, lihat SaleService::createSale().
+            'qrisEnabled' => $setting->qris_enabled,
+            'qrisCashAccountCode' => $setting->qris_cash_account_code,
+            'bankAccounts' => $this->cashAccounts->selectableBankAccounts(),
             'memberEnabled' => $setting->member_enabled,
             'tableEnabled' => $setting->table_enabled,
             // Meja dipilih dari daftar SAJA (bukan ketik bebas seperti
@@ -82,7 +90,13 @@ class SaleController extends Controller
     public function store(Request $request): RedirectResponse
     {
         $validated = $request->validate([
-            'payment_method' => ['nullable', 'string', 'in:cash'],
+            // 'qris' (Tafsir A -- pencatatan, lihat rancangan fitur QRIS):
+            // form kasir web mengirim cash_received/change_amount = total/
+            // 0 juga untuk QRIS (field itu disembunyikan tapi tetap
+            // dikirim apa adanya, lihat Kasir/Index.jsx) -- SaleService
+            // MENGABAIKANNYA sepenuhnya untuk qris (dipaksa pas di sana),
+            // jadi tidak perlu percabangan validasi di sini.
+            'payment_method' => ['nullable', 'string', 'in:cash,qris'],
             // Wajib sekarang -- form kasir web selalu punya field "Uang
             // Diterima" (lihat Kasir/Index.jsx), sama seperti mobile.
             // SaleService::createSale() memvalidasi ulang (cash_received

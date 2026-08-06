@@ -549,4 +549,120 @@ class SettingControllerTest extends TestCase
 
         $this->actingAs($user)->get('/pengaturan')->assertForbidden();
     }
+
+    // --- QRIS (Tafsir A -- pencatatan) ---
+
+    public function test_qris_enabled_defaults_to_false(): void
+    {
+        $this->assertFalse(CompanySetting::current()->qris_enabled);
+        $this->assertNull(CompanySetting::current()->qris_cash_account_code);
+    }
+
+    public function test_admin_can_turn_on_qris_with_a_bank_account_without_creating_a_log_entry(): void
+    {
+        $admin = User::factory()->create(['role_id' => $this->roleWith(['company-settings.manage'])->id]);
+
+        $response = $this->actingAs($admin)->put('/pengaturan/qris', [
+            'qris_enabled' => true,
+            'qris_cash_account_code' => '1-1100',
+        ]);
+
+        $response->assertRedirect(route('pengaturan.index'));
+        $fresh = CompanySetting::current()->fresh();
+        $this->assertTrue($fresh->qris_enabled);
+        $this->assertSame('1-1100', $fresh->qris_cash_account_code);
+        $this->assertSame(0, CompanySettingLog::count());
+    }
+
+    public function test_enabling_qris_without_a_bank_account_is_rejected(): void
+    {
+        $admin = User::factory()->create(['role_id' => $this->roleWith(['company-settings.manage'])->id]);
+
+        $response = $this->actingAs($admin)->put('/pengaturan/qris', [
+            'qris_enabled' => true,
+        ]);
+
+        $response->assertSessionHasErrors('qris_cash_account_code');
+        $this->assertFalse(CompanySetting::current()->fresh()->qris_enabled);
+    }
+
+    public function test_enabling_qris_targeting_kas_is_rejected(): void
+    {
+        $admin = User::factory()->create(['role_id' => $this->roleWith(['company-settings.manage'])->id]);
+
+        $response = $this->actingAs($admin)->put('/pengaturan/qris', [
+            'qris_enabled' => true,
+            'qris_cash_account_code' => '1-1000',
+        ]);
+
+        $response->assertSessionHasErrors('qris_cash_account_code');
+        $this->assertFalse(CompanySetting::current()->fresh()->qris_enabled);
+    }
+
+    public function test_enabling_qris_with_an_inactive_or_unrelated_account_is_rejected(): void
+    {
+        $admin = User::factory()->create(['role_id' => $this->roleWith(['company-settings.manage'])->id]);
+
+        // '1-1200' -- Persediaan, akun asset yang sah tapi BUKAN Kas/Bank.
+        $response = $this->actingAs($admin)->put('/pengaturan/qris', [
+            'qris_enabled' => true,
+            'qris_cash_account_code' => '1-1200',
+        ]);
+
+        $response->assertSessionHasErrors('qris_cash_account_code');
+    }
+
+    public function test_admin_can_turn_off_qris_leaving_the_account_stored_for_next_time(): void
+    {
+        CompanySetting::current()->update([
+            'qris_enabled' => true,
+            'qris_cash_account_code' => '1-1100',
+        ]);
+        $admin = User::factory()->create(['role_id' => $this->roleWith(['company-settings.manage'])->id]);
+
+        $response = $this->actingAs($admin)->put('/pengaturan/qris', [
+            'qris_enabled' => false,
+            'qris_cash_account_code' => '1-1100',
+        ]);
+
+        $response->assertRedirect(route('pengaturan.index'));
+        $fresh = CompanySetting::current()->fresh();
+        $this->assertFalse($fresh->qris_enabled);
+        // Akun TETAP tersimpan (bukan dikosongkan) -- mengaktifkan lagi
+        // nanti tidak perlu memilih ulang dari awal.
+        $this->assertSame('1-1100', $fresh->qris_cash_account_code);
+    }
+
+    public function test_non_admin_cannot_update_qris(): void
+    {
+        $kasir = User::factory()->create(['role_id' => $this->roleWith(['kasir.access'])->id]);
+
+        $response = $this->actingAs($kasir)->put('/pengaturan/qris', [
+            'qris_enabled' => true,
+            'qris_cash_account_code' => '1-1100',
+        ]);
+
+        $response->assertForbidden();
+        $this->assertFalse(CompanySetting::current()->fresh()->qris_enabled);
+    }
+
+    public function test_settings_page_exposes_qris_fields_and_bank_only_accounts(): void
+    {
+        CompanySetting::current()->update([
+            'qris_enabled' => true,
+            'qris_cash_account_code' => '1-1100',
+        ]);
+        $admin = User::factory()->create(['role_id' => $this->roleWith(['company-settings.manage'])->id]);
+
+        $response = $this->actingAs($admin)->get('/pengaturan');
+
+        $response->assertOk();
+        $response->assertInertia(fn ($page) => $page
+            ->component('Settings/Index')
+            ->where('qrisEnabled', true)
+            ->where('qrisCashAccountCode', '1-1100')
+            ->where('bankAccounts', fn ($accounts) => collect($accounts)->pluck('code')->contains('1-1100')
+                && ! collect($accounts)->pluck('code')->contains('1-1000')),
+        );
+    }
 }

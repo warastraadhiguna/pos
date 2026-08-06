@@ -28,6 +28,8 @@ use Illuminate\Database\Eloquent\Model;
     'note_enabled',
     'variation_enabled',
     'draft_enabled',
+    'qris_enabled',
+    'qris_cash_account_code',
 ])]
 class CompanySetting extends Model
 {
@@ -57,6 +59,7 @@ class CompanySetting extends Model
             'note_enabled' => 'boolean',
             'variation_enabled' => 'boolean',
             'draft_enabled' => 'boolean',
+            'qris_enabled' => 'boolean',
         ];
     }
 
