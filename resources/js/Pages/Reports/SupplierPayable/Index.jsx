@@ -37,6 +37,9 @@ export default function SupplierPayableIndex({ asOf, rows, total }) {
                             <Link href={route('laporan.laba-rugi')} className="text-gray-500 hover:text-gray-700">
                                 Laba Rugi
                             </Link>
+                            <Link href={route('laporan.beban')} className="text-gray-500 hover:text-gray-700">
+                                Beban Operasional
+                            </Link>
                             <Link href={route('laporan.penjualan')} className="text-gray-500 hover:text-gray-700">
                                 Penjualan
                             </Link>

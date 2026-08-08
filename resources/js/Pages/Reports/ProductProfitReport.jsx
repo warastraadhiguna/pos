@@ -59,6 +59,12 @@ export default function ProductProfitReport({ start, end, sort, report }) {
                                 Laba Rugi
                             </Link>
                             <Link
+                                href={route('laporan.beban')}
+                                className="text-gray-500 hover:text-gray-700"
+                            >
+                                Beban Operasional
+                            </Link>
+                            <Link
                                 href={route('laporan.penjualan')}
                                 className="text-gray-500 hover:text-gray-700"
                             >
