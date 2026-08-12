@@ -7,6 +7,7 @@ use App\Models\CompanySettingLog;
 use App\Services\CashAccountService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Redirect;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -53,6 +54,11 @@ class SettingController extends Controller
             'draftEnabled' => $setting->draft_enabled,
             'qrisEnabled' => $setting->qris_enabled,
             'qrisCashAccountCode' => $setting->qris_cash_account_code,
+            // Device Binding -- lihat rancangan yang disetujui, poin 8.
+            // ISO 8601 (bukan objek Carbon) supaya Inertia/JS mengonsumsinya
+            // tanpa parsing khusus, konsisten field tanggal lain di sini.
+            'deviceBindingGracePeriodEndsAt' => $setting->device_binding_grace_period_ends_at?->toIso8601String(),
+            'deviceBindingGracePeriodActive' => $setting->deviceBindingGracePeriodActive(),
             // Bank-saja (tanpa Kas) -- QRIS TIDAK PERNAH boleh mengarah ke
             // Kas, lihat CashAccountService::selectableBankAccounts()/
             // InvalidQrisAccountException. Selalu dimuat (murah), pola sama
@@ -405,6 +411,41 @@ class SettingController extends Controller
             $data['qris_enabled']
                 ? 'Metode pembayaran QRIS diaktifkan.'
                 : 'Metode pembayaran QRIS dimatikan — tidak akan muncul di kasir.',
+        );
+    }
+
+    /**
+     * Kontrol jendela grace period Device Binding (lihat rancangan yang
+     * disetujui, poin 8 & migration
+     * `..._add_device_binding_grace_period_to_company_settings_table`) --
+     * admin bisa memperpanjang (dari SEKARANG + N hari, bukan menambah ke
+     * tanggal lama -- lebih intuitif saat rollout APK ternyata lambat),
+     * mempersingkat/menetapkan tanggal pasti, atau mematikannya sama sekali
+     * (device baru sesudahnya selalu masuk pending). Sengaja TIDAK dicatat
+     * ke company_setting_logs (bukan keputusan berstatus hukum seperti
+     * PPN), pola sama toggle fitur lain di file ini.
+     */
+    public function updateDeviceBindingGracePeriod(Request $request): RedirectResponse
+    {
+        $data = $request->validate([
+            'action' => ['required', 'in:extend,set,disable'],
+            'days' => ['required_if:action,extend', 'nullable', 'integer', 'min:1', 'max:365'],
+            'ends_at' => ['required_if:action,set', 'nullable', 'date'],
+        ]);
+
+        $endsAt = match ($data['action']) {
+            'extend' => Carbon::now()->addDays((int) $data['days']),
+            'set' => Carbon::parse($data['ends_at']),
+            'disable' => null,
+        };
+
+        CompanySetting::current()->update(['device_binding_grace_period_ends_at' => $endsAt]);
+
+        return Redirect::route('pengaturan.index')->with(
+            'success',
+            $endsAt
+                ? 'Grace period Device Binding diperbarui — device baru otomatis disetujui sampai '.$endsAt->translatedFormat('d M Y H:i').' WIB.'
+                : 'Grace period Device Binding dimatikan — device baru sekarang selalu menunggu persetujuan admin.',
         );
     }
 }

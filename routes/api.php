@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\DashboardController;
+use App\Http\Controllers\Api\DeviceController;
 use App\Http\Controllers\Api\DraftController;
 use App\Http\Controllers\Api\ItemController;
 use App\Http\Controllers\Api\MemberController;
@@ -32,6 +33,14 @@ Route::prefix('v1')->group(function () {
         // diterbitkan, tidak bisa "ditambahkan" ke token yang sudah ada).
         Route::get('/dashboard/today', [DashboardController::class, 'today']);
         Route::get('/reports/sales', [SalesReportController::class, 'index']);
+
+        // Device Binding -- cek berkala (poin 5 rancangan), ability
+        // terpisah (bukan sync:*) supaya token lama pra-fitur ini (tanpa
+        // ability ini) tidak bisa memanggilnya sama sekali -- mereka juga
+        // tidak diharuskan, karena login mereka sudah lolos tanpa
+        // device_id (fitur ini belum ada saat token itu diterbitkan).
+        Route::get('/device/status', [DeviceController::class, 'status'])
+            ->middleware('abilities:device:status');
 
         Route::middleware('abilities:sync:pull')->group(function () {
             Route::get('/products', [ProductController::class, 'index']);

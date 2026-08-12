@@ -8,6 +8,7 @@ use App\Http\Controllers\Beban\ExpenseController;
 use App\Http\Controllers\Beban\ExpensePaymentController;
 use App\Http\Controllers\Coa\ChartOfAccountsController;
 use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\DeviceController;
 use App\Http\Controllers\KasBank\CashAccountController;
 use App\Http\Controllers\KasBank\CashTransferController;
 use App\Http\Controllers\Modal\EquityTransactionController;
@@ -96,6 +97,17 @@ Route::middleware(['auth', 'verified', 'permission:company-settings.manage'])->p
     Route::put('/variasi', [SettingController::class, 'updateVariationEnabled'])->name('variasi.update');
     Route::put('/draft', [SettingController::class, 'updateDraftEnabled'])->name('draft.update');
     Route::put('/qris', [SettingController::class, 'updateQris'])->name('qris.update');
+    Route::put('/device-binding-grace-period', [SettingController::class, 'updateDeviceBindingGracePeriod'])->name('device-binding-grace-period.update');
+});
+
+// Device Binding -- halaman TERSEMBUNYI (URL disengaja tidak dicantumkan di
+// navGroups AuthenticatedLayout.jsx, lihat DeviceController), tapi tetap
+// digerbangi permission seperti halaman admin lain manapun -- "tersembunyi"
+// murni UX, otorisasi tetap penuh lewat middleware ini.
+Route::middleware(['auth', 'verified', 'permission:devices.manage'])->prefix('pengaturan/perangkat')->name('devices.')->group(function () {
+    Route::get('/', [DeviceController::class, 'index'])->name('index');
+    Route::put('/{device}/approve', [DeviceController::class, 'approve'])->name('approve');
+    Route::put('/{device}/revoke', [DeviceController::class, 'revoke'])->name('revoke');
 });
 
 Route::middleware(['auth', 'verified', 'permission:master-data.manage'])->prefix('master')->name('master.')->group(function () {

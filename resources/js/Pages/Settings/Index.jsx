@@ -38,6 +38,8 @@ export default function Index({
     qrisEnabled,
     qrisCashAccountCode,
     bankAccounts,
+    deviceBindingGracePeriodEndsAt,
+    deviceBindingGracePeriodActive,
     logs,
 }) {
     const [confirming, setConfirming] = useState(false);
@@ -85,6 +87,10 @@ export default function Index({
     );
     const [savingQris, setSavingQris] = useState(false);
     const qrisErrors = usePage().props.errors ?? {};
+
+    const [graceDays, setGraceDays] = useState('14');
+    const [savingGracePeriod, setSavingGracePeriod] = useState(false);
+    const gracePeriodErrors = usePage().props.errors ?? {};
 
     // String (bukan number) di state INPUT supaya kolom bisa dikosongkan
     // sementara saat diketik ulang tanpa langsung jadi "0" -- dikonversi
@@ -326,6 +332,26 @@ export default function Index({
                 },
                 onFinish: () => setSavingQris(false),
             },
+        );
+    };
+
+    const submitGracePeriodExtend = (e) => {
+        e.preventDefault();
+        setSavingGracePeriod(true);
+        router.put(
+            route('pengaturan.device-binding-grace-period.update'),
+            { action: 'extend', days: Number(graceDays) },
+            { preserveScroll: true, onFinish: () => setSavingGracePeriod(false) },
+        );
+    };
+
+    const submitGracePeriodDisable = () => {
+        if (savingGracePeriod) return;
+        setSavingGracePeriod(true);
+        router.put(
+            route('pengaturan.device-binding-grace-period.update'),
+            { action: 'disable' },
+            { preserveScroll: true, onFinish: () => setSavingGracePeriod(false) },
         );
     };
 
@@ -1029,6 +1055,81 @@ export default function Index({
                                     />
                                 </div>
                             )}
+                        </div>
+                    </section>
+
+                    <hr className="border-gray-200" />
+
+                    <section>
+                        <h3 className="mb-3 text-base font-semibold text-gray-900">
+                            Device Binding — Grace Period
+                        </h3>
+                        <div className="rounded-lg bg-white p-6 shadow-sm ring-1 ring-gray-200">
+                            <p className="text-sm text-gray-600">
+                                Selama jendela ini aktif, perangkat mobile
+                                BARU (belum pernah tercatat) otomatis
+                                disetujui saat login pertama — tidak perlu
+                                persetujuan admin manual. Dipakai supaya HP/
+                                tablet yang sudah dipakai sekarang tidak
+                                tiba-tiba terblokir saat APK dengan Device
+                                Binding disebar. Setelah jendela ini berakhir
+                                (atau dimatikan), perangkat baru selalu
+                                menunggu persetujuan di halaman Kelola
+                                Perangkat.
+                            </p>
+
+                            <div
+                                className={
+                                    'mt-4 rounded-md p-3 text-sm ' +
+                                    (deviceBindingGracePeriodActive
+                                        ? 'bg-green-50 text-green-800 ring-1 ring-green-200'
+                                        : 'bg-gray-100 text-gray-600 ring-1 ring-gray-300')
+                                }
+                            >
+                                {deviceBindingGracePeriodActive
+                                    ? `Aktif sampai ${formatDateTime(deviceBindingGracePeriodEndsAt)} WIB.`
+                                    : 'Tidak aktif — perangkat baru selalu menunggu persetujuan admin.'}
+                            </div>
+
+                            <form
+                                onSubmit={submitGracePeriodExtend}
+                                className="mt-4 flex flex-wrap items-end gap-3"
+                            >
+                                <div>
+                                    <InputLabel
+                                        htmlFor="grace_days"
+                                        value="Perpanjang dari sekarang (hari)"
+                                    />
+                                    <TextInput
+                                        id="grace_days"
+                                        type="number"
+                                        min="1"
+                                        max="365"
+                                        className="mt-1 h-10 block w-32"
+                                        value={graceDays}
+                                        onChange={(e) => setGraceDays(e.target.value)}
+                                    />
+                                    <InputError
+                                        className="mt-2"
+                                        message={gracePeriodErrors.days}
+                                    />
+                                </div>
+                                <PrimaryButton
+                                    type="submit"
+                                    className="h-10"
+                                    disabled={savingGracePeriod}
+                                >
+                                    Perpanjang
+                                </PrimaryButton>
+                                <SecondaryButton
+                                    type="button"
+                                    className="h-10"
+                                    disabled={savingGracePeriod || !deviceBindingGracePeriodActive}
+                                    onClick={submitGracePeriodDisable}
+                                >
+                                    Matikan Sekarang
+                                </SecondaryButton>
+                            </form>
                         </div>
                     </section>
                 </div>

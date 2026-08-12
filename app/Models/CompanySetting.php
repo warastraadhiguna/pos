@@ -30,6 +30,7 @@ use Illuminate\Database\Eloquent\Model;
     'draft_enabled',
     'qris_enabled',
     'qris_cash_account_code',
+    'device_binding_grace_period_ends_at',
 ])]
 class CompanySetting extends Model
 {
@@ -60,7 +61,21 @@ class CompanySetting extends Model
             'variation_enabled' => 'boolean',
             'draft_enabled' => 'boolean',
             'qris_enabled' => 'boolean',
+            'device_binding_grace_period_ends_at' => 'datetime',
         ];
+    }
+
+    /**
+     * Device baru (device_id belum pernah tercatat di tabel `devices`)
+     * auto-approved selama masih di dalam jendela ini -- lihat migration
+     * `..._add_device_binding_grace_period_to_company_settings_table` untuk
+     * alasan lengkap. NULL = grace period mati (device baru selalu masuk
+     * pending, perilaku normal jangka panjang).
+     */
+    public function deviceBindingGracePeriodActive(): bool
+    {
+        return $this->device_binding_grace_period_ends_at !== null
+            && $this->device_binding_grace_period_ends_at->isFuture();
     }
 
     /**

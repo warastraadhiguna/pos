@@ -27,7 +27,7 @@ class DashboardController extends Controller
                 'active_products_count' => Product::where('is_active', true)->count(),
                 'open_purchase_orders_count' => PurchaseOrder::whereIn('status', ['open', 'partial'])->count(),
             ],
-            'recentSales' => Sale::latest('id')->take(5)->get(['id', 'date', 'grand_total', 'payment_method', 'status']),
+            'recentSales' => Sale::latest('id')->take(5)->get(['id', 'date', 'occurred_at', 'grand_total', 'payment_method', 'status']),
         ]);
     }
 }

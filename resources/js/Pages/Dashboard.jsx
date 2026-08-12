@@ -4,6 +4,29 @@ import { Head, Link, usePage } from '@inertiajs/react';
 const formatRupiah = (value) => 'Rp' + Math.round(Number(value)).toLocaleString('id-ID');
 const formatDate = (value) => String(value).slice(0, 10);
 
+// Sama persis dengan formatter di Penjualan/Index.jsx, Show.jsx & Receipt.jsx
+// (duplikasi kecil yang sudah diterima di codebase ini) -- `occurred_at`
+// (momen transaksi sebenarnya, bisa null untuk baris lama sebelum kolom ini
+// ada) selalu diformat eksplisit ke Asia/Jakarta di sini, TIDAK diasumsikan
+// dari string mentahnya. `date` (hari kalender WIB, selalu ada) jadi fallback
+// saat `occurred_at` null.
+const formatDateTimeWIB = (occurredAt, fallbackDate) => {
+    if (!occurredAt) {
+        return `${formatDate(fallbackDate)} (jam tidak tercatat)`;
+    }
+    const parts = new Intl.DateTimeFormat('en-CA', {
+        timeZone: 'Asia/Jakarta',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false,
+    }).formatToParts(new Date(occurredAt));
+    const get = (type) => parts.find((p) => p.type === type)?.value;
+    return `${get('year')}-${get('month')}-${get('day')} ${get('hour')}:${get('minute')} WIB`;
+};
+
 const quickActions = [
     {
         label: 'Buka Kasir',
@@ -173,7 +196,7 @@ export default function Dashboard({ stats, recentSales }) {
                                             #{sale.id}
                                         </td>
                                         <td className="whitespace-nowrap px-6 py-3 text-sm text-gray-500">
-                                            {formatDate(sale.date)}
+                                            {formatDateTimeWIB(sale.occurred_at, sale.date)}
                                         </td>
                                         <td className="whitespace-nowrap px-6 py-3 text-sm text-gray-500">
                                             {statusLabel[sale.status] ??
