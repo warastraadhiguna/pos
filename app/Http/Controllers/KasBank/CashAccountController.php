@@ -4,6 +4,8 @@ namespace App\Http\Controllers\KasBank;
 
 use App\Http\Controllers\Controller;
 use App\Models\Account;
+use App\Models\CompanySetting;
+use App\Models\Outlet;
 use App\Services\CashAccountService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -21,7 +23,12 @@ class CashAccountController extends Controller
         $group = Account::where('code', '1-1')->firstOrFail();
 
         return Inertia::render('KasBank/Accounts/Index', [
-            'accounts' => Account::where('parent_id', $group->id)->orderBy('code')->get(),
+            'accounts' => Account::with('outlet:id,name')->where('parent_id', $group->id)->orderBy('code')->get(),
+            // Multi-Cabang Lapisan 1 -- pemilih cabang di form "Tambah Akun
+            // Bank" hanya muncul kalau fiturnya aktif, pola sama saklar
+            // opsional lain (lihat rancangan poin 5/6).
+            'outlets' => Outlet::where('is_active', true)->orderBy('name')->get(['id', 'name']),
+            'multiBranchEnabled' => CompanySetting::current()->multi_branch_enabled,
         ]);
     }
 
@@ -30,10 +37,11 @@ class CashAccountController extends Controller
         $validated = $request->validate([
             'code' => ['required', 'string', 'max:20', 'unique:accounts,code'],
             'name' => ['required', 'string', 'max:255'],
+            'outlet_id' => ['nullable', 'integer', 'exists:outlets,id'],
         ]);
 
         try {
-            $this->cashAccounts->createBankAccount($validated['code'], $validated['name']);
+            $this->cashAccounts->createBankAccount($validated['code'], $validated['name'], $validated['outlet_id'] ?? null);
         } catch (Throwable $e) {
             report($e);
 

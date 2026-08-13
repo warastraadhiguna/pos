@@ -1,4 +1,5 @@
 import SecondaryButton from '@/Components/SecondaryButton';
+import SelectInput from '@/Components/SelectInput';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import { Head, router } from '@inertiajs/react';
 
@@ -38,7 +39,7 @@ const statusBadge = {
     ),
 };
 
-export default function Index({ devices }) {
+export default function Index({ devices, outlets }) {
     const approve = (device) => {
         router.put(route('devices.approve', device.id), {}, { preserveScroll: true });
     };
@@ -48,6 +49,17 @@ export default function Index({ devices }) {
             return;
         }
         router.put(route('devices.revoke', device.id), {}, { preserveScroll: true });
+    };
+
+    // Multi-Cabang Lapisan 1 -- device = sumber utama resolusi cabang untuk
+    // transaksi mobile nanti (Lapisan 3). Belum di-enforce di sini, cuma
+    // penugasan -- lihat DeviceService::assignOutlet().
+    const assignOutlet = (device, outletId) => {
+        router.put(
+            route('devices.assign-outlet', device.id),
+            { outlet_id: outletId || null },
+            { preserveScroll: true },
+        );
     };
 
     return (
@@ -89,6 +101,9 @@ export default function Index({ devices }) {
                                     <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
                                         Didaftarkan Oleh
                                     </th>
+                                    <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
+                                        Cabang
+                                    </th>
                                     <th className="px-6 py-3" />
                                 </tr>
                             </thead>
@@ -110,6 +125,20 @@ export default function Index({ devices }) {
                                         <td className="whitespace-nowrap px-6 py-4 text-sm text-gray-600">
                                             {device.registered_by?.name ?? '-'}
                                         </td>
+                                        <td className="whitespace-nowrap px-6 py-4 text-sm">
+                                            <SelectInput
+                                                className="h-9"
+                                                value={device.outlet?.id ?? ''}
+                                                onChange={(e) => assignOutlet(device, e.target.value)}
+                                            >
+                                                <option value="">— Belum diatur —</option>
+                                                {outlets.map((outlet) => (
+                                                    <option key={outlet.id} value={outlet.id}>
+                                                        {outlet.name}
+                                                    </option>
+                                                ))}
+                                            </SelectInput>
+                                        </td>
                                         <td className="whitespace-nowrap px-6 py-4 text-right text-sm">
                                             <div className="flex justify-end gap-2">
                                                 {device.status !== 'approved' && (
@@ -128,7 +157,7 @@ export default function Index({ devices }) {
                                 ))}
                                 {devices.length === 0 && (
                                     <tr>
-                                        <td colSpan={6} className="px-6 py-6 text-center text-sm text-gray-500">
+                                        <td colSpan={7} className="px-6 py-6 text-center text-sm text-gray-500">
                                             Belum ada perangkat yang pernah mencoba login.
                                         </td>
                                     </tr>

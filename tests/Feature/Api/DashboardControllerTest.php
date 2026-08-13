@@ -6,6 +6,7 @@ use App\Models\Outlet;
 use App\Models\Product;
 use App\Models\User;
 use App\Models\Warehouse;
+use App\Services\BranchService;
 use App\Services\CashAccountService;
 use App\Services\DraftSyncService;
 use App\Services\InventoryService;
@@ -35,7 +36,7 @@ class DashboardControllerTest extends TestCase
 
         $this->seed(FoundationSeeder::class);
 
-        $this->sales = new SaleService(new InventoryService(), new PostingService(), new CashAccountService(), new DraftSyncService());
+        $this->sales = new SaleService(new InventoryService(), new PostingService(), new CashAccountService(), new DraftSyncService(new BranchService()));
         $this->reports = new SalesReportService();
 
         $this->outlet = Outlet::first();

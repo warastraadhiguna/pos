@@ -7,6 +7,7 @@ use App\Models\Outlet;
 use App\Models\Product;
 use App\Models\TaxRate;
 use App\Models\Warehouse;
+use App\Services\BranchService;
 use App\Services\CashAccountService;
 use App\Services\DraftSyncService;
 use App\Services\FinancialReportService;
@@ -46,7 +47,7 @@ class SalesReportServiceTest extends TestCase
 
         $inventory = new InventoryService();
         $posting = new PostingService();
-        $this->sales = new SaleService($inventory, $posting, new CashAccountService(), new DraftSyncService());
+        $this->sales = new SaleService($inventory, $posting, new CashAccountService(), new DraftSyncService(new BranchService()));
         $this->reports = new SalesReportService();
 
         $this->outlet = Outlet::first();

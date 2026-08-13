@@ -30,12 +30,14 @@ class RolesAndPermissionsSeeder extends Seeder
             ['key' => 'aset.manage', 'label' => 'Aset Tetap', 'group' => 'Transaksi'],
             ['key' => 'coa.manage', 'label' => 'Chart of Accounts', 'group' => 'Transaksi'],
             ['key' => 'stock-opname.manage', 'label' => 'Stock Opname', 'group' => 'Transaksi'],
+            ['key' => 'distributions.manage', 'label' => 'Distribusi Stok', 'group' => 'Transaksi'],
             ['key' => 'master-data.manage', 'label' => 'Master Data', 'group' => 'Master Data'],
             ['key' => 'laporan.view', 'label' => 'Laporan', 'group' => 'Laporan'],
             ['key' => 'pengguna.manage', 'label' => 'Kelola Pengguna', 'group' => 'Pengaturan'],
             ['key' => 'roles.manage', 'label' => 'Kelola Role & Izin', 'group' => 'Pengaturan'],
             ['key' => 'company-settings.manage', 'label' => 'Pengaturan Pajak (PPN)', 'group' => 'Pengaturan'],
             ['key' => 'devices.manage', 'label' => 'Kelola Perangkat', 'group' => 'Pengaturan'],
+            ['key' => 'branches.manage', 'label' => 'Kelola Cabang', 'group' => 'Pengaturan'],
         ])->mapWithKeys(fn (array $permission) => [$permission['key'] => Permission::create($permission)]);
 
         $admin = Role::create(['name' => 'Admin']);
@@ -43,7 +45,7 @@ class RolesAndPermissionsSeeder extends Seeder
 
         $manajer = Role::create(['name' => 'Manajer']);
         $manajer->permissions()->attach(
-            $permissions->except(['pengguna.manage', 'roles.manage', 'company-settings.manage', 'modal.manage', 'coa.manage', 'devices.manage'])->pluck('id'),
+            $permissions->except(['pengguna.manage', 'roles.manage', 'company-settings.manage', 'modal.manage', 'coa.manage', 'devices.manage', 'branches.manage'])->pluck('id'),
         );
 
         $kasir = Role::create(['name' => 'Kasir']);

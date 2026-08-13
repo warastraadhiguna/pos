@@ -77,7 +77,9 @@ class DraftController extends Controller
             'lines.*.variations.*.price' => ['nullable', 'numeric', 'min:0'],
         ]);
 
-        $draft = $this->drafts->push($validated, $request->user());
+        // Multi-Cabang Lapisan 3 -- lihat docblock DraftSyncService::push().
+        $deviceId = $request->user()->currentAccessToken()->device_id;
+        $draft = $this->drafts->push($validated, $request->user(), $deviceId);
 
         return (new DraftResource($draft))->response()->setStatusCode(200);
     }

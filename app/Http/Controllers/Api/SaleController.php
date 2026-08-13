@@ -5,9 +5,8 @@ namespace App\Http\Controllers\Api;
 use App\Exceptions\CashierMismatchException;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\SaleResource;
-use App\Models\Outlet;
 use App\Models\Sale;
-use App\Models\Warehouse;
+use App\Services\BranchService;
 use App\Services\SaleService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -15,7 +14,10 @@ use Throwable;
 
 class SaleController extends Controller
 {
-    public function __construct(private readonly SaleService $sales) {}
+    public function __construct(
+        private readonly SaleService $sales,
+        private readonly BranchService $branches,
+    ) {}
 
     /**
      * Sync a sale created offline on the mobile client.
@@ -103,11 +105,15 @@ class SaleController extends Controller
             'lines.*.variations.*.price' => ['nullable', 'numeric', 'min:0'],
         ]);
 
-        // Satu outlet untuk sekarang (lihat docs/ROADMAP.md) — begitu
-        // multi-outlet dibutuhkan, outlet harus datang dari device/pilihan
-        // kasir yang login, bukan first().
-        $outlet = Outlet::firstOrFail();
-        $warehouse = Warehouse::where('outlet_id', $outlet->id)->firstOrFail();
+        // Multi-Cabang Lapisan 3 -- cabang device ini ditentukan dari
+        // device.outlet_id (Device Binding), TIDAK PERNAH dari input
+        // client -- mobile tidak mengirim/tahu outlet_id sama sekali,
+        // server yang meresolve dari device yang mengautentikasi request
+        // ini. multi_branch_enabled=false (default) SELALU pusat --
+        // lihat BranchService::resolveCurrentOutlet().
+        $deviceId = $request->user()->currentAccessToken()->device_id;
+        $outlet = $this->branches->resolveCurrentOutlet($request->user(), $deviceId);
+        $warehouse = $outlet->warehouses()->firstOrFail();
 
         try {
             $sale = $this->sales->createSale([

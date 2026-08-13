@@ -34,6 +34,10 @@ const icons = {
     stok: 'M3 3h18v4H3V3zm1 4h16v13a1 1 0 01-1 1H5a1 1 0 01-1-1V7zm4 4h8',
     beban: 'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2M9 9h6M9 13h6M9 17h4',
     meja: 'M4 4h16v2H4V4zM6 6v14M10 6v14M14 6v14M18 6v14',
+    cabang:
+        'M3 21h18M5 21V10l7-6 7 6v11M9 21v-6h6v6',
+    distribusi:
+        'M13 7h6l2 3v5h-2m-4 0H5V6a1 1 0 011-1h7v9zm0 0h4m-8 0a2 2 0 11-4 0 2 2 0 014 0zm8 0a2 2 0 104 0 2 2 0 00-4 0z',
     catatan:
         'M9 3h6l4 4v11a2 2 0 01-2 2H9a2 2 0 01-2-2V5a2 2 0 012-2zM9 9h6M9 13h6M9 17h3',
 };
@@ -130,6 +134,7 @@ const navGroups = [
                 ],
             },
             { name: 'Stock Opname', href: 'stock-opname.index', match: 'stock-opname.*', icon: icons.stockOpname, permission: 'stock-opname.manage' },
+            { name: 'Distribusi Stok', href: 'distribusi.stock-distributions.index', match: 'distribusi.*', icon: icons.distribusi, permission: 'distributions.manage', feature: 'multi_branch_enabled' },
             {
                 name: 'Kas & Bank',
                 icon: icons.neraca,
@@ -264,6 +269,7 @@ const navGroups = [
             { name: 'Laba Rugi', href: 'laporan.laba-rugi', match: 'laporan.laba-rugi', icon: icons.labaRugi, permission: 'laporan.view' },
             { name: 'Beban Operasional', href: 'laporan.beban', match: 'laporan.beban', icon: icons.beban, permission: 'laporan.view' },
             { name: 'Penjualan', href: 'laporan.penjualan', match: 'laporan.penjualan', icon: icons.riwayat, permission: 'laporan.view' },
+            { name: 'Perbandingan Cabang', href: 'laporan.perbandingan-cabang', match: 'laporan.perbandingan-cabang', icon: icons.cabang, permission: 'laporan.view', feature: 'multi_branch_enabled' },
             { name: 'Laba per Produk', href: 'laporan.laba-produk', match: 'laporan.laba-produk', icon: icons.labaRugi, permission: 'laporan.view' },
             { name: 'PPN', href: 'laporan.ppn', match: 'laporan.ppn', icon: icons.ppn, permission: 'laporan.view' },
             { name: 'Daftar Stok', href: 'laporan.stok', match: 'laporan.stok', icon: icons.stok, permission: 'laporan.view' },
@@ -277,6 +283,7 @@ const navGroups = [
             { name: 'Role & Izin', href: 'roles.index', match: 'roles.*', icon: icons.shield, permission: 'roles.manage' },
             { name: 'Pengaturan', href: 'pengaturan.index', match: 'pengaturan.*', icon: icons.ppn, permission: 'company-settings.manage' },
             { name: 'Chart of Accounts', href: 'coa.index', match: 'coa.*', icon: icons.neraca, permission: 'coa.manage' },
+            { name: 'Cabang', href: 'master.outlets.index', match: 'master.outlets.*', icon: icons.cabang, permission: 'branches.manage', feature: 'multi_branch_enabled' },
         ],
     },
 ];

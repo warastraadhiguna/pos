@@ -21,6 +21,7 @@ use App\Models\StockMovement;
 use App\Models\TaxRate;
 use App\Models\Uom;
 use App\Models\Warehouse;
+use App\Services\BranchService;
 use App\Services\CashAccountService;
 use App\Services\DraftSyncService;
 use App\Services\InventoryService;
@@ -69,7 +70,7 @@ class SaleServiceTest extends TestCase
         CompanySetting::current()->update(['ppn_active' => true]);
 
         $this->inventory = new InventoryService();
-        $this->sales = new SaleService($this->inventory, new PostingService(), new CashAccountService(), new DraftSyncService());
+        $this->sales = new SaleService($this->inventory, new PostingService(), new CashAccountService(), new DraftSyncService(new BranchService()));
 
         $this->outlet = Outlet::first();
         $this->warehouse = Warehouse::first();

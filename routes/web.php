@@ -9,6 +9,7 @@ use App\Http\Controllers\Beban\ExpensePaymentController;
 use App\Http\Controllers\Coa\ChartOfAccountsController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\DeviceController;
+use App\Http\Controllers\Distribusi\StockDistributionController;
 use App\Http\Controllers\KasBank\CashAccountController;
 use App\Http\Controllers\KasBank\CashTransferController;
 use App\Http\Controllers\Modal\EquityTransactionController;
@@ -18,6 +19,7 @@ use App\Http\Controllers\Master\ItemCategoryController;
 use App\Http\Controllers\Master\ItemController;
 use App\Http\Controllers\Master\MemberController;
 use App\Http\Controllers\Master\NoteTemplateController;
+use App\Http\Controllers\Master\OutletController;
 use App\Http\Controllers\Master\ProductCategoryController;
 use App\Http\Controllers\Master\ProductController;
 use App\Http\Controllers\Master\SupplierController;
@@ -98,6 +100,7 @@ Route::middleware(['auth', 'verified', 'permission:company-settings.manage'])->p
     Route::put('/draft', [SettingController::class, 'updateDraftEnabled'])->name('draft.update');
     Route::put('/qris', [SettingController::class, 'updateQris'])->name('qris.update');
     Route::put('/device-binding-grace-period', [SettingController::class, 'updateDeviceBindingGracePeriod'])->name('device-binding-grace-period.update');
+    Route::put('/multi-cabang', [SettingController::class, 'updateMultiBranchEnabled'])->name('multi-branch.update');
 });
 
 // Device Binding -- halaman TERSEMBUNYI (URL disengaja tidak dicantumkan di
@@ -108,6 +111,22 @@ Route::middleware(['auth', 'verified', 'permission:devices.manage'])->prefix('pe
     Route::get('/', [DeviceController::class, 'index'])->name('index');
     Route::put('/{device}/approve', [DeviceController::class, 'approve'])->name('approve');
     Route::put('/{device}/revoke', [DeviceController::class, 'revoke'])->name('revoke');
+    Route::put('/{device}/outlet', [DeviceController::class, 'assignOutlet'])->name('assign-outlet');
+});
+
+// Multi-Cabang Lapisan 1 -- "Kelola Cabang". Permission TERPISAH dari
+// master-data.manage (bukan digabung ke grup di bawah) karena struktur
+// cabang menyentuh skoping akuntansi/kas (poin 5 rancangan), sensitivitas
+// setara coa.manage/modal.manage/devices.manage -- BEDA dari halaman
+// Device Binding: route ini ADA di navigasi (AuthenticatedLayout.jsx,
+// feature-gated `multi_branch_enabled`), tidak disembunyikan.
+Route::middleware(['auth', 'verified', 'permission:branches.manage'])->prefix('master/outlets')->name('master.outlets.')->group(function () {
+    Route::get('/', [OutletController::class, 'index'])->name('index');
+    Route::get('/create', [OutletController::class, 'create'])->name('create');
+    Route::post('/', [OutletController::class, 'store'])->name('store');
+    Route::get('/{outlet}/edit', [OutletController::class, 'edit'])->name('edit');
+    Route::put('/{outlet}', [OutletController::class, 'update'])->name('update');
+    Route::delete('/{outlet}', [OutletController::class, 'destroy'])->name('destroy');
 });
 
 Route::middleware(['auth', 'verified', 'permission:master-data.manage'])->prefix('master')->name('master.')->group(function () {
@@ -189,12 +208,23 @@ Route::middleware(['auth', 'verified', 'permission:stock-opname.manage'])->prefi
     Route::post('/{stockOpname}/post', [StockOpnameController::class, 'post'])->name('post');
 });
 
+// Multi-Cabang Lapisan 2 -- "Distribusi Stok" (pusat->cabang). Dokumen
+// (index/create/store/show) TANPA edit/update/destroy -- immutable begitu
+// dibuat, sama seperti purchase_orders. `execute`/`cancel` adalah aksi
+// terpisah (pola sama purchase-orders.receive.*), bukan bagian resource.
+Route::middleware(['auth', 'verified', 'permission:distributions.manage'])->prefix('distribusi')->name('distribusi.')->group(function () {
+    Route::resource('stock-distributions', StockDistributionController::class)->only(['index', 'create', 'store', 'show']);
+    Route::post('stock-distributions/{stockDistribution}/execute', [StockDistributionController::class, 'execute'])->name('stock-distributions.execute');
+    Route::post('stock-distributions/{stockDistribution}/cancel', [StockDistributionController::class, 'cancel'])->name('stock-distributions.cancel');
+});
+
 Route::middleware(['auth', 'verified', 'permission:laporan.view'])->prefix('laporan')->name('laporan.')->group(function () {
     Route::get('/neraca', [FinancialReportController::class, 'balanceSheet'])->name('neraca');
     Route::get('/laba-rugi', [FinancialReportController::class, 'incomeStatement'])->name('laba-rugi');
     Route::get('/beban', [FinancialReportController::class, 'expenseReport'])->name('beban');
     Route::get('/ppn', [TaxReportController::class, 'ppn'])->name('ppn');
     Route::get('/penjualan', [SalesReportController::class, 'index'])->name('penjualan');
+    Route::get('/perbandingan-cabang', [SalesReportController::class, 'compare'])->name('perbandingan-cabang');
     Route::get('/laba-produk', [ProductProfitReportController::class, 'index'])->name('laba-produk');
     Route::get('/stok', [InventoryReportController::class, 'index'])->name('stok');
     Route::get('/hutang', [SupplierPayableReportController::class, 'index'])->name('hutang');

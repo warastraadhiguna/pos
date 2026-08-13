@@ -5,7 +5,6 @@ namespace App\Services;
 use App\Exceptions\DraftLockedException;
 use App\Models\Draft;
 use App\Models\DraftLine;
-use App\Models\Outlet;
 use App\Models\User;
 use App\Support\SyncWatermark;
 use Illuminate\Database\Eloquent\Collection;
@@ -33,20 +32,29 @@ use Illuminate\Support\Facades\DB;
  */
 class DraftSyncService
 {
+    public function __construct(private readonly BranchService $branches) {}
+
     /**
      * UPSERT draft + baris-barisnya oleh [$user] (device yang mengautentikasi
      * request ini). Draft yang sudah `finalized`/`cancelled` TIDAK PERNAH
      * dihidupkan lagi oleh push manapun -- device offline yang telat push
      * edit ke draft yang sudah selesai duluan di device lain cukup diabaikan
      * isinya (draft itu sudah tidak relevan, lihat status di respons).
+     *
+     * `$deviceId` (Multi-Cabang Lapisan 3) -- device Android ID dari token
+     * yang mengautentikasi request ini (lihat Api\DraftController), dioper
+     * ke BranchService::resolveCurrentOutlet() supaya draft BARU ter-tag
+     * cabang yang benar sejak dibuat, bukan selalu pusat. Draft yang SUDAH
+     * ada (upsert ke baris existing) tidak pernah pindah outlet_id --
+     * cabang sebuah draft ditentukan sekali, saat pertama kali dibuat.
      */
-    public function push(array $data, User $user): Draft
+    public function push(array $data, User $user, ?string $deviceId = null): Draft
     {
-        return DB::transaction(function () use ($data, $user) {
+        return DB::transaction(function () use ($data, $user, $deviceId) {
             $draft = Draft::where('local_uuid', $data['local_uuid'])->lockForUpdate()->first();
 
             if (! $draft) {
-                $outlet = Outlet::firstOrFail();
+                $outlet = $this->branches->resolveCurrentOutlet($user, $deviceId);
                 $draft = Draft::create([
                     'outlet_id' => $outlet->id,
                     'local_uuid' => $data['local_uuid'],

@@ -19,7 +19,7 @@ function AccountRows({ accounts }) {
     ));
 }
 
-export default function BalanceSheet({ asOf, report }) {
+export default function BalanceSheet({ asOf, report, cashByOutlet, multiBranchEnabled }) {
     const changeDate = (e) => {
         router.get(
             route('laporan.neraca'),
@@ -84,6 +84,14 @@ export default function BalanceSheet({ asOf, report }) {
                             >
                                 Hutang Supplier
                             </Link>
+                            {multiBranchEnabled && (
+                                <Link
+                                    href={route('laporan.perbandingan-cabang')}
+                                    className="text-gray-500 hover:text-gray-700"
+                                >
+                                    Perbandingan Cabang
+                                </Link>
+                            )}
                         </div>
                         <div className="flex items-center gap-2">
                             <label className="text-sm text-gray-600">
@@ -115,6 +123,38 @@ export default function BalanceSheet({ asOf, report }) {
                             <span>{formatRupiah(report.total_assets)}</span>
                         </div>
                     </div>
+
+                    {multiBranchEnabled && cashByOutlet.length > 0 && (
+                        <div className="rounded-lg bg-white p-6 shadow-sm ring-1 ring-blue-100">
+                            <h3 className="mb-1 font-semibold text-gray-900">
+                                Kas per Cabang (rincian)
+                            </h3>
+                            <p className="mb-3 text-xs text-gray-500">
+                                Ini RINCIAN saja, BUKAN Neraca terpisah per cabang.
+                                Neraca di atas tetap level BISNIS KESELURUHAN (gabungan)
+                                dengan sengaja — pos seperti Modal, Hutang Usaha, dan
+                                Aset Tetap umumnya milik bisnis secara keseluruhan,
+                                bukan cabang tertentu, jadi memaksa Neraca penuh
+                                per-cabang bisa menghasilkan angka yang TIDAK
+                                SEIMBANG dan menyesatkan. Bagian ini cuma menunjukkan
+                                saldo Kas/Bank yang memang sudah ditugaskan ke cabang
+                                tertentu (Kelola Cabang).
+                            </p>
+                            <div className="space-y-1">
+                                {cashByOutlet.map((row) => (
+                                    <div
+                                        key={`${row.outlet_id}-${row.account_code}`}
+                                        className="flex justify-between py-1 text-sm"
+                                    >
+                                        <span className="text-gray-600">
+                                            {row.outlet_name} — {row.account_code} {row.account_name}
+                                        </span>
+                                        <span className="text-gray-900">{formatRupiah(row.balance)}</span>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
 
                     <div className="rounded-lg bg-white p-6 shadow-sm">
                         <h3 className="mb-2 font-semibold text-gray-900">

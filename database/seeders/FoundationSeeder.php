@@ -24,7 +24,17 @@ class FoundationSeeder extends Seeder
      */
     public function run(): void
     {
-        $outlet = Outlet::create(['name' => 'Outlet Pusat']);
+        // Multi-Cabang Lapisan 1 -- instalasi baru (bukan upgrade dari data
+        // lama, itu ditangani migration `..._add_branch_fields_to_outlets_table`)
+        // juga wajib punya TEPAT SATU cabang headquarters sejak awal, supaya
+        // Lapisan 2 (pembelian masuk lewat pusat) selalu punya tempat untuk
+        // beroperasi tanpa admin perlu mengatur manual dulu.
+        $outlet = Outlet::create([
+            'name' => 'Outlet Pusat',
+            'code' => 'PUSAT',
+            'is_active' => true,
+            'is_headquarters' => true,
+        ]);
 
         Warehouse::create([
             'outlet_id' => $outlet->id,

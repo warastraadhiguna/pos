@@ -9,7 +9,7 @@ import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import { Head, Link, useForm } from '@inertiajs/react';
 import { useRef } from 'react';
 
-export default function Form({ user, roles }) {
+export default function Form({ user, roles, outlets, multiBranchEnabled }) {
     const editing = user !== null;
 
     const { data, setData, post, put, processing, errors } = useForm({
@@ -17,6 +17,7 @@ export default function Form({ user, roles }) {
         email: user?.email ?? '',
         password: '',
         role_id: user?.role_id ?? '',
+        outlet_id: user?.outlet_id ?? '',
     });
 
     const formRef = useRef(null);
@@ -112,6 +113,28 @@ export default function Form({ user, roles }) {
                                 </SelectInput>
                                 <InputError className="mt-2" message={errors.role_id} />
                             </div>
+
+                            {multiBranchEnabled && (
+                                <div>
+                                    <InputLabel htmlFor="outlet_id" value="Cabang" />
+                                    <SelectInput
+                                        id="outlet_id"
+                                        className="mt-1 block w-full"
+                                        value={data.outlet_id}
+                                        onChange={(e) => setData('outlet_id', e.target.value)}
+                                    >
+                                        <option value="">
+                                            — Semua cabang (admin/manajer) —
+                                        </option>
+                                        {outlets.map((outlet) => (
+                                            <option key={outlet.id} value={outlet.id}>
+                                                {outlet.name}
+                                            </option>
+                                        ))}
+                                    </SelectInput>
+                                    <InputError className="mt-2" message={errors.outlet_id} />
+                                </div>
+                            )}
 
                             <div>
                                 <InputLabel

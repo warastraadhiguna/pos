@@ -2,18 +2,20 @@ import InputError from '@/Components/InputError';
 import InputLabel from '@/Components/InputLabel';
 import PrimaryButton from '@/Components/PrimaryButton';
 import SecondaryButton from '@/Components/SecondaryButton';
+import SelectInput from '@/Components/SelectInput';
 import TextInput from '@/Components/TextInput';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import { Head, router, useForm, usePage } from '@inertiajs/react';
 
 const RESERVED_CODES = ['1-1000'];
 
-export default function Index({ accounts }) {
+export default function Index({ accounts, outlets, multiBranchEnabled }) {
     const { errors } = usePage().props;
 
     const { data, setData, post, processing, reset } = useForm({
         code: '',
         name: '',
+        outlet_id: '',
     });
 
     const submit = (e) => {
@@ -68,6 +70,25 @@ export default function Index({ accounts }) {
                                 />
                                 <InputError className="mt-2" message={errors.name} />
                             </div>
+                            {multiBranchEnabled && (
+                                <div>
+                                    <InputLabel htmlFor="outlet_id" value="Cabang" />
+                                    <SelectInput
+                                        id="outlet_id"
+                                        className="mt-1 h-10 block"
+                                        value={data.outlet_id}
+                                        onChange={(e) => setData('outlet_id', e.target.value)}
+                                    >
+                                        <option value="">— Akun bersama/global —</option>
+                                        {outlets.map((outlet) => (
+                                            <option key={outlet.id} value={outlet.id}>
+                                                {outlet.name}
+                                            </option>
+                                        ))}
+                                    </SelectInput>
+                                    <InputError className="mt-2" message={errors.outlet_id} />
+                                </div>
+                            )}
                             <PrimaryButton disabled={processing} className="h-10">
                                 Tambah
                             </PrimaryButton>
@@ -92,6 +113,11 @@ export default function Index({ accounts }) {
                                     <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
                                         Status
                                     </th>
+                                    {multiBranchEnabled && (
+                                        <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
+                                            Cabang
+                                        </th>
+                                    )}
                                     <th className="px-6 py-3" />
                                 </tr>
                             </thead>
@@ -123,6 +149,11 @@ export default function Index({ accounts }) {
                                                     </span>
                                                 )}
                                             </td>
+                                            {multiBranchEnabled && (
+                                                <td className="whitespace-nowrap px-6 py-4 text-sm text-gray-600">
+                                                    {account.outlet?.name ?? '-'}
+                                                </td>
+                                            )}
                                             <td className="whitespace-nowrap px-6 py-4 text-right text-sm">
                                                 {!reserved && (
                                                     <SecondaryButton onClick={() => toggleActive(account)}>
@@ -135,7 +166,7 @@ export default function Index({ accounts }) {
                                 })}
                                 {accounts.length === 0 && (
                                     <tr>
-                                        <td colSpan={4} className="px-6 py-6 text-center text-sm text-gray-500">
+                                        <td colSpan={multiBranchEnabled ? 5 : 4} className="px-6 py-6 text-center text-sm text-gray-500">
                                             Belum ada akun Kas/Bank.
                                         </td>
                                     </tr>

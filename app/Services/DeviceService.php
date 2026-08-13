@@ -85,6 +85,22 @@ class DeviceService
         return $device->fresh();
     }
 
+    /**
+     * Multi-Cabang Lapisan 1 -- tautkan device fisik ke cabang tempatnya
+     * berada (rancangan yang disetujui, poin 4: device = sumber utama
+     * resolusi cabang untuk transaksi mobile nanti, Lapisan 3). Bisa
+     * dipanggil kapan pun (bukan cuma saat approve) -- admin boleh
+     * menambah/mengubah/melepas (`null`) penugasan cabang device kapan
+     * saja. TIDAK diperlakukan sebagai enforcement apa pun di Lapisan 1 --
+     * cuma menyimpan penugasannya.
+     */
+    public function assignOutlet(Device $device, ?int $outletId): Device
+    {
+        $device->update(['outlet_id' => $outletId]);
+
+        return $device->fresh();
+    }
+
     public function approve(Device $device, User $admin): Device
     {
         $device->update([

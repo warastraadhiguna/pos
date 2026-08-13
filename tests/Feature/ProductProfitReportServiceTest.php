@@ -11,6 +11,7 @@ use App\Models\ProductComponent;
 use App\Models\TaxRate;
 use App\Models\Uom;
 use App\Models\Warehouse;
+use App\Services\BranchService;
 use App\Services\CashAccountService;
 use App\Services\DraftSyncService;
 use App\Services\FinancialReportService;
@@ -50,7 +51,7 @@ class ProductProfitReportServiceTest extends TestCase
         // class ini butuh skenario produk kena pajak, jadi di-set eksplisit.
         CompanySetting::current()->update(['ppn_active' => true]);
 
-        $this->sales = new SaleService(new InventoryService(), new PostingService(), new CashAccountService(), new DraftSyncService());
+        $this->sales = new SaleService(new InventoryService(), new PostingService(), new CashAccountService(), new DraftSyncService(new BranchService()));
         $this->reports = new ProductProfitReportService();
 
         $this->outlet = Outlet::first();

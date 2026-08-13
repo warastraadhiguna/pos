@@ -13,6 +13,7 @@ use App\Models\Role;
 use App\Models\Uom;
 use App\Models\User;
 use App\Models\Warehouse;
+use App\Services\BranchService;
 use App\Services\CashAccountService;
 use App\Services\DraftSyncService;
 use App\Services\InventoryService;
@@ -184,7 +185,7 @@ class ProductVariationControllerTest extends TestCase
 
         $outlet = Outlet::first();
         $warehouse = Warehouse::first();
-        $sales = new SaleService(new InventoryService(), new PostingService(), new CashAccountService(), new DraftSyncService());
+        $sales = new SaleService(new InventoryService(), new PostingService(), new CashAccountService(), new DraftSyncService(new BranchService()));
         $sales->createSale([
             'outlet_id' => $outlet->id,
             'warehouse_id' => $warehouse->id,

@@ -9,6 +9,7 @@ use App\Models\Product;
 use App\Models\Role;
 use App\Models\User;
 use App\Models\Warehouse;
+use App\Services\BranchService;
 use App\Services\CashAccountService;
 use App\Services\DraftSyncService;
 use App\Services\InventoryService;
@@ -126,7 +127,7 @@ class TableControllerTest extends TestCase
         $warehouse = Warehouse::first();
         $product = Product::create(['name' => 'Produk Uji', 'sell_price' => 10000]);
 
-        $sales = new SaleService(new InventoryService(), new PostingService(), new CashAccountService(), new DraftSyncService());
+        $sales = new SaleService(new InventoryService(), new PostingService(), new CashAccountService(), new DraftSyncService(new BranchService()));
         $sales->createSale([
             'outlet_id' => $outlet->id,
             'warehouse_id' => $warehouse->id,

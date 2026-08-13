@@ -1,3 +1,4 @@
+import SelectInput from '@/Components/SelectInput';
 import TextInput from '@/Components/TextInput';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import { Head, Link, router } from '@inertiajs/react';
@@ -8,11 +9,23 @@ const formatRupiah = (value) => {
     return sign + 'Rp' + Math.round(Math.abs(number)).toLocaleString('id-ID');
 };
 
-export default function ExpenseReport({ start, end, expenses, totalExpense }) {
+export default function ExpenseReport({ start, end, outletId, expenses, totalExpense, outlets, multiBranchEnabled }) {
     const changeRange = (field, value) => {
         router.get(
             route('laporan.beban'),
-            { start: field === 'start' ? value : start, end: field === 'end' ? value : end },
+            {
+                start: field === 'start' ? value : start,
+                end: field === 'end' ? value : end,
+                outlet_id: outletId ?? '',
+            },
+            { preserveState: true, preserveScroll: true },
+        );
+    };
+
+    const changeOutlet = (value) => {
+        router.get(
+            route('laporan.beban'),
+            { start, end, outlet_id: value },
             { preserveState: true, preserveScroll: true },
         );
     };
@@ -52,8 +65,30 @@ export default function ExpenseReport({ start, end, expenses, totalExpense }) {
                             <Link href={route('laporan.hutang')} className="text-gray-500 hover:text-gray-700">
                                 Hutang Supplier
                             </Link>
+                            {multiBranchEnabled && (
+                                <Link href={route('laporan.perbandingan-cabang')} className="text-gray-500 hover:text-gray-700">
+                                    Perbandingan Cabang
+                                </Link>
+                            )}
                         </div>
                         <div className="flex items-center gap-2">
+                            {multiBranchEnabled && (
+                                <>
+                                    <label className="text-sm text-gray-600">Cabang</label>
+                                    <SelectInput
+                                        className="h-9"
+                                        value={outletId ?? ''}
+                                        onChange={(e) => changeOutlet(e.target.value)}
+                                    >
+                                        <option value="">Semua Cabang</option>
+                                        {outlets.map((outlet) => (
+                                            <option key={outlet.id} value={outlet.id}>
+                                                {outlet.name}
+                                            </option>
+                                        ))}
+                                    </SelectInput>
+                                </>
+                            )}
                             <label className="text-sm text-gray-600">Dari</label>
                             <TextInput
                                 type="date"

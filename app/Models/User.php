@@ -12,7 +12,7 @@ use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Laravel\Sanctum\HasApiTokens;
 
-#[Fillable(['name', 'email', 'password', 'role_id'])]
+#[Fillable(['name', 'email', 'password', 'role_id', 'outlet_id'])]
 #[Hidden(['password', 'remember_token'])]
 class User extends Authenticatable
 {
@@ -34,12 +34,25 @@ class User extends Authenticatable
             // CreateAdminCommand, rentan bug yang sama kalau driver PDO
             // mengembalikannya sebagai string mentah.
             'role_id' => 'integer',
+            'outlet_id' => 'integer',
         ];
     }
 
     public function role(): BelongsTo
     {
         return $this->belongsTo(Role::class);
+    }
+
+    /**
+     * Cabang tempat user ini bekerja (Multi-Cabang Lapisan 1, kasir web
+     * `/kasir` -- lihat rancangan). NULL = tidak ditugaskan ke satu cabang
+     * (admin/manajer yang mengawasi banyak cabang, ATAU -- untuk SEMUA
+     * user yang sudah ada sebelum fitur ini -- "belum pernah diatur",
+     * TIDAK di-enforce di logika mana pun sampai Lapisan 3).
+     */
+    public function outlet(): BelongsTo
+    {
+        return $this->belongsTo(Outlet::class);
     }
 
     public function hasPermission(string $key): bool

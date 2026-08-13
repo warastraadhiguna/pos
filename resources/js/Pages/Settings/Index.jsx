@@ -40,6 +40,7 @@ export default function Index({
     bankAccounts,
     deviceBindingGracePeriodEndsAt,
     deviceBindingGracePeriodActive,
+    multiBranchEnabled,
     logs,
 }) {
     const [confirming, setConfirming] = useState(false);
@@ -91,6 +92,9 @@ export default function Index({
     const [graceDays, setGraceDays] = useState('14');
     const [savingGracePeriod, setSavingGracePeriod] = useState(false);
     const gracePeriodErrors = usePage().props.errors ?? {};
+
+    const [multiBranchOn, setMultiBranchOn] = useState(multiBranchEnabled);
+    const [savingMultiBranch, setSavingMultiBranch] = useState(false);
 
     // String (bukan number) di state INPUT supaya kolom bisa dikosongkan
     // sementara saat diketik ulang tanpa langsung jadi "0" -- dikonversi
@@ -342,6 +346,22 @@ export default function Index({
             route('pengaturan.device-binding-grace-period.update'),
             { action: 'extend', days: Number(graceDays) },
             { preserveScroll: true, onFinish: () => setSavingGracePeriod(false) },
+        );
+    };
+
+    const submitMultiBranchEnabled = (checked) => {
+        if (savingMultiBranch) return;
+        const previous = multiBranchOn;
+        setMultiBranchOn(checked);
+        setSavingMultiBranch(true);
+        router.put(
+            route('pengaturan.multi-branch.update'),
+            { multi_branch_enabled: checked },
+            {
+                preserveScroll: true,
+                onError: () => setMultiBranchOn(previous),
+                onFinish: () => setSavingMultiBranch(false),
+            },
         );
     };
 
@@ -1053,6 +1073,52 @@ export default function Index({
                                         message={qrisErrors.qris_cash_account_code}
                                         className="mt-1"
                                     />
+                                </div>
+                            )}
+                        </div>
+                    </section>
+
+                    <hr className="border-gray-200" />
+
+                    <section>
+                        <h3 className="mb-3 text-base font-semibold text-gray-900">
+                            Multi-Cabang
+                        </h3>
+                        <div className="rounded-lg bg-white p-6 shadow-sm ring-1 ring-gray-200">
+                            <label className="flex cursor-pointer items-start gap-3">
+                                <input
+                                    type="checkbox"
+                                    className="mt-1 rounded text-primary focus:ring-primary"
+                                    checked={multiBranchOn}
+                                    disabled={savingMultiBranch}
+                                    onChange={(e) =>
+                                        submitMultiBranchEnabled(e.target.checked)
+                                    }
+                                />
+                                <span>
+                                    <span className="block font-medium text-gray-900">
+                                        Aktifkan fitur Multi-Cabang
+                                    </span>
+                                    <span className="block text-sm text-gray-500">
+                                        Kalau aktif, menu "Cabang" muncul
+                                        (kelola daftar cabang, tandai
+                                        cabang pusat) dan pemilih cabang
+                                        muncul di halaman Kelola Pengguna
+                                        &amp; Kelola Perangkat. Kalau mati
+                                        (default, cocok untuk toko satu
+                                        lokasi), semuanya tersembunyi —
+                                        tidak ada yang berubah dari
+                                        perilaku sekarang.
+                                    </span>
+                                </span>
+                            </label>
+                            {multiBranchOn && (
+                                <div className="mt-4 border-t border-gray-100 pt-4">
+                                    <Link href={route('master.outlets.index')}>
+                                        <SecondaryButton type="button">
+                                            Kelola Cabang
+                                        </SecondaryButton>
+                                    </Link>
                                 </div>
                             )}
                         </div>

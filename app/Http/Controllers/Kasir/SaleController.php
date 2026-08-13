@@ -6,9 +6,8 @@ use App\Http\Controllers\Controller;
 use App\Models\CompanySetting;
 use App\Models\DiningTable;
 use App\Models\NoteTemplate;
-use App\Models\Outlet;
 use App\Models\Product;
-use App\Models\Warehouse;
+use App\Services\BranchService;
 use App\Services\CashAccountService;
 use App\Services\InventoryService;
 use App\Services\SaleService;
@@ -25,9 +24,10 @@ class SaleController extends Controller
         private readonly SaleService $sales,
         private readonly InventoryService $inventory,
         private readonly CashAccountService $cashAccounts,
+        private readonly BranchService $branches,
     ) {}
 
-    public function index(): Response
+    public function index(Request $request): Response
     {
         $setting = CompanySetting::current();
 
@@ -44,8 +44,11 @@ class SaleController extends Controller
 
         $productStock = null;
         if ($setting->show_stock_on_button) {
-            $outlet = Outlet::firstOrFail();
-            $warehouse = Warehouse::where('outlet_id', $outlet->id)->firstOrFail();
+            // Multi-Cabang Lapisan 3 -- stok yang ditampilkan di tombol
+            // produk sekarang mencerminkan gudang CABANG kasir ini, bukan
+            // selalu pusat (lihat BranchService::resolveCurrentOutlet()).
+            $outlet = $this->branches->resolveCurrentOutlet($request->user());
+            $warehouse = $outlet->warehouses()->firstOrFail();
             $productStock = $this->inventory->producibleQtyForProducts($products, $warehouse);
         }
 
@@ -137,10 +140,13 @@ class SaleController extends Controller
             'lines.*.variations.*.price' => ['nullable', 'numeric', 'min:0'],
         ]);
 
-        // Satu outlet untuk sekarang (lihat docs/ROADMAP.md) — begitu multi-outlet
-        // dibutuhkan, outlet aktif harus datang dari sesi/pilihan kasir, bukan first().
-        $outlet = Outlet::firstOrFail();
-        $warehouse = Warehouse::where('outlet_id', $outlet->id)->firstOrFail();
+        // Multi-Cabang Lapisan 3 -- cabang kasir ini ditentukan dari
+        // user.outlet_id (kasir web tidak punya konsep device fisik),
+        // dengan pusat sebagai fallback -- lihat
+        // BranchService::resolveCurrentOutlet(). multi_branch_enabled=false
+        // (default) SELALU pusat, perilaku identik sebelum Lapisan 3 ada.
+        $outlet = $this->branches->resolveCurrentOutlet($request->user());
+        $warehouse = $outlet->warehouses()->firstOrFail();
 
         try {
             $sale = $this->sales->createSale([
@@ -151,7 +157,11 @@ class SaleController extends Controller
                 'payment_method' => $validated['payment_method'] ?? 'cash',
                 'cash_received' => $validated['cash_received'],
                 'change_amount' => $validated['change_amount'],
-                'cash_account_code' => $validated['cash_account_code'] ?? CashAccountService::DEFAULT_CODE,
+                // Kasir yang MEMANG memilih akun tertentu di picker tetap
+                // menang apa adanya; kalau tidak, SaleService meresolve Kas
+                // CABANG ini sendiri (bukan selalu Kas pusat) -- lihat
+                // CashAccountService::resolveCashAccountCodeForOutlet().
+                'cash_account_code' => $validated['cash_account_code'] ?? null,
                 'member_id' => $validated['member_id'] ?? null,
                 'member_name' => $validated['member_name'] ?? null,
                 'table_id' => $validated['table_id'] ?? null,

@@ -118,10 +118,15 @@ class SaleService
      * cash_account_code is likewise OPTIONAL -- which Kas/Bank account
      * actually received this sale's money (see CashAccountService). When
      * absent AND payment_method is 'cash' (or anything else that isn't
-     * 'qris'), defaults to Kas (CashAccountService::DEFAULT_CODE) -- the
-     * mobile POS API never sends this at all for cash sales (no UI for it
-     * by design, every mobile cash sale is physically cash-in-hand), so it
-     * always lands on Kas via this default; only the web Kasir flow ever
+     * 'qris'), defaults to this sale's OWN outlet's Kas account (Multi-
+     * Cabang Lapisan 3, see CashAccountService::resolveCashAccountCodeForOutlet())
+     * -- the pusat outlet resolves to the same global Kas
+     * (CashAccountService::DEFAULT_CODE) as before Lapisan 3 existed, so
+     * single-location shops (multi_branch_enabled=false, every sale
+     * resolves to pusat) see byte-identical behaviour. The mobile POS API
+     * never sends this at all for cash sales (no UI for it by design,
+     * every mobile cash sale is physically cash-in-hand), so it always
+     * lands on this outlet-resolved default; only the web Kasir flow ever
      * sends a non-default value there.
      *
      * When absent AND payment_method is 'qris' (Tafsir A -- pencatatan,
@@ -253,7 +258,17 @@ class SaleService
                         'Metode QRIS memerlukan akun Bank tujuan -- atur dulu di Pengaturan.'
                     );
             } else {
-                $cashAccountCode = $data['cash_account_code'] ?? CashAccountService::DEFAULT_CODE;
+                // Multi-Cabang Lapisan 3 -- caller yang TIDAK mengirim
+                // cash_account_code sama sekali (mobile POS -- selalu,
+                // web Kasir kalau kasirnya tidak memilih akun tertentu)
+                // jatuh ke akun Kas CABANG penjualan ini (lihat
+                // CashAccountService::resolveCashAccountCodeForOutlet()),
+                // BUKAN selalu Kas pusat seperti sebelum Lapisan 3 --
+                // cabang pusat sendiri tetap Kas global apa adanya
+                // (method itu mengembalikan DEFAULT_CODE untuk pusat),
+                // jadi perilaku pusat 100% tidak berubah.
+                $cashAccountCode = $data['cash_account_code']
+                    ?? $this->cashAccounts->resolveCashAccountCodeForOutlet($warehouse->outlet);
             }
 
             $this->cashAccounts->assertValidCashAccount($cashAccountCode);

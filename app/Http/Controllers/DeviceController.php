@@ -3,8 +3,10 @@
 namespace App\Http\Controllers;
 
 use App\Models\Device;
+use App\Models\Outlet;
 use App\Services\DeviceService;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -30,6 +32,12 @@ class DeviceController extends Controller
 
         return Inertia::render('Pengaturan/Perangkat/Index', [
             'devices' => $devices,
+            // Multi-Cabang Lapisan 1 -- daftar cabang aktif untuk pemilih
+            // di tiap baris device (lihat DeviceService::assignOutlet()).
+            // Selalu dimuat (murah, sama pola bankAccounts di
+            // SettingController) -- tidak masalah walau multi_branch_enabled
+            // mati, halaman ini toh sudah tersembunyi dari nav.
+            'outlets' => Outlet::where('is_active', true)->orderBy('name')->get(['id', 'name']),
         ]);
     }
 
@@ -45,5 +53,16 @@ class DeviceController extends Controller
         $this->devices->revoke($device, request()->user());
 
         return back()->with('success', "Perangkat [{$device->device_id}] dicabut aksesnya.");
+    }
+
+    public function assignOutlet(Request $request, Device $device): RedirectResponse
+    {
+        $data = $request->validate([
+            'outlet_id' => ['nullable', 'integer', 'exists:outlets,id'],
+        ]);
+
+        $this->devices->assignOutlet($device, $data['outlet_id'] ?? null);
+
+        return back()->with('success', "Cabang perangkat [{$device->device_id}] diperbarui.");
     }
 }

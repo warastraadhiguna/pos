@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\Outlet;
 use App\Models\Product;
 use App\Models\Sale;
 use App\Models\SaleLine;
@@ -37,16 +38,19 @@ class SalesReportService
      * already has the enum, no such flow exists yet) are deliberately
      * excluded so this report never has to be revisited when that ships.
      *
+     * `$outletId` (Multi-Cabang Lapisan 4) -- null (default) = GABUNGAN
+     * semua cabang, perilaku identik sebelum Lapisan 4 ada.
+     *
      * @return array{
      *     start: DateTimeInterface|string, end: DateTimeInterface|string,
      *     by_day: array, by_product: array,
      *     totals: array{transaction_count: int, gross: string, net: string, tax: string},
      * }
      */
-    public function salesReport(DateTimeInterface|string $startDate, DateTimeInterface|string $endDate): array
+    public function salesReport(DateTimeInterface|string $startDate, DateTimeInterface|string $endDate, ?int $outletId = null): array
     {
-        $byDay = $this->byDay($startDate, $endDate);
-        $byProduct = $this->byProduct($startDate, $endDate);
+        $byDay = $this->byDay($startDate, $endDate, $outletId);
+        $byProduct = $this->byProduct($startDate, $endDate, $outletId);
 
         $totals = [
             'transaction_count' => (int) $byDay->sum('transaction_count'),
@@ -67,11 +71,12 @@ class SalesReportService
     /**
      * @return Collection<int, array{date: string, transaction_count: int, gross: string, net: string, tax: string}>
      */
-    private function byDay(DateTimeInterface|string $startDate, DateTimeInterface|string $endDate): Collection
+    private function byDay(DateTimeInterface|string $startDate, DateTimeInterface|string $endDate, ?int $outletId = null): Collection
     {
         return Sale::query()
             ->where('status', 'completed')
             ->whereBetween('date', [$startDate, $endDate])
+            ->when($outletId !== null, fn ($q) => $q->where('outlet_id', $outletId))
             ->selectRaw('date, COUNT(*) as transaction_count, SUM(grand_total) as gross, SUM(subtotal) as net, SUM(tax_total) as tax')
             ->groupBy('date')
             ->orderBy('date')
@@ -88,12 +93,13 @@ class SalesReportService
     /**
      * @return Collection<int, array{product_id: int, product_name: string, qty: string, gross: string, net: string, tax: string}>
      */
-    private function byProduct(DateTimeInterface|string $startDate, DateTimeInterface|string $endDate): Collection
+    private function byProduct(DateTimeInterface|string $startDate, DateTimeInterface|string $endDate, ?int $outletId = null): Collection
     {
         $rows = SaleLine::query()
             ->join('sales', 'sales.id', '=', 'sale_lines.sale_id')
             ->where('sales.status', 'completed')
             ->whereBetween('sales.date', [$startDate, $endDate])
+            ->when($outletId !== null, fn ($q) => $q->where('sales.outlet_id', $outletId))
             ->get([
                 'sale_lines.product_id',
                 'sale_lines.qty',
@@ -164,5 +170,55 @@ class SalesReportService
         $tax = bcsub((string) $row->line_total, $net, self::SCALE);
 
         return [$net, $tax];
+    }
+
+    /**
+     * Multi-Cabang Lapisan 4 -- omzet + laba kotor SETIAP cabang aktif
+     * bersanding, untuk halaman Perbandingan Cabang. `gross_profit` di sini
+     * = omzet − HPP langsung dari `sale_lines.hpp_total` (murni penjualan,
+     * BELUM dikurangi beban operasional) -- untuk laba BERSIH per-cabang
+     * (sudah termasuk beban operasional), lihat
+     * FinancialReportService::incomeStatementByOutlet() yang menyaring
+     * lewat jurnal (mencakup Beban Operasional & Selisih Persediaan juga,
+     * bukan cuma HPP penjualan).
+     *
+     * @return array<int, array{outlet_id: int, outlet_name: string, is_headquarters: bool, transaction_count: int, gross: string, hpp: string, gross_profit: string}>
+     */
+    public function salesByOutlet(DateTimeInterface|string $startDate, DateTimeInterface|string $endDate): array
+    {
+        $salesRows = Sale::query()
+            ->where('status', 'completed')
+            ->whereBetween('date', [$startDate, $endDate])
+            ->selectRaw('outlet_id, COUNT(*) as transaction_count, SUM(grand_total) as gross')
+            ->groupBy('outlet_id')
+            ->get()
+            ->keyBy('outlet_id');
+
+        $hppRows = SaleLine::query()
+            ->join('sales', 'sales.id', '=', 'sale_lines.sale_id')
+            ->where('sales.status', 'completed')
+            ->whereBetween('sales.date', [$startDate, $endDate])
+            ->selectRaw('sales.outlet_id as outlet_id, SUM(sale_lines.hpp_total) as hpp')
+            ->groupBy('sales.outlet_id')
+            ->get()
+            ->keyBy('outlet_id');
+
+        return Outlet::where('is_active', true)->orderByDesc('is_headquarters')->orderBy('name')->get()
+            ->map(function (Outlet $outlet) use ($salesRows, $hppRows) {
+                $gross = (string) ($salesRows->get($outlet->id)?->gross ?? '0');
+                $hpp = (string) ($hppRows->get($outlet->id)?->hpp ?? '0');
+
+                return [
+                    'outlet_id' => $outlet->id,
+                    'outlet_name' => $outlet->name,
+                    'is_headquarters' => $outlet->is_headquarters,
+                    'transaction_count' => (int) ($salesRows->get($outlet->id)?->transaction_count ?? 0),
+                    'gross' => $gross,
+                    'hpp' => $hpp,
+                    'gross_profit' => bcsub($gross, $hpp, self::SCALE),
+                ];
+            })
+            ->values()
+            ->all();
     }
 }

@@ -59,6 +59,8 @@ class SettingController extends Controller
             // tanpa parsing khusus, konsisten field tanggal lain di sini.
             'deviceBindingGracePeriodEndsAt' => $setting->device_binding_grace_period_ends_at?->toIso8601String(),
             'deviceBindingGracePeriodActive' => $setting->deviceBindingGracePeriodActive(),
+            // Multi-Cabang Lapisan 1 -- lihat rancangan yang disetujui, poin 6.
+            'multiBranchEnabled' => $setting->multi_branch_enabled,
             // Bank-saja (tanpa Kas) -- QRIS TIDAK PERNAH boleh mengarah ke
             // Kas, lihat CashAccountService::selectableBankAccounts()/
             // InvalidQrisAccountException. Selalu dimuat (murah), pola sama
@@ -446,6 +448,28 @@ class SettingController extends Controller
             $endsAt
                 ? 'Grace period Device Binding diperbarui — device baru otomatis disetujui sampai '.$endsAt->translatedFormat('d M Y H:i').' WIB.'
                 : 'Grace period Device Binding dimatikan — device baru sekarang selalu menunggu persetujuan admin.',
+        );
+    }
+
+    /**
+     * Saklar global Multi-Cabang Lapisan 1 (lihat rancangan yang
+     * disetujui, poin 6). OFF (default) -- menu "Cabang" & field pemilih
+     * cabang (Kelola Perangkat, Kelola Pengguna) tersembunyi sama sekali,
+     * perilaku identik toko satu lokasi sebelum fitur ini ada. Sengaja
+     * TIDAK dicatat ke company_setting_logs, pola sama toggle fitur lain
+     * di file ini.
+     */
+    public function updateMultiBranchEnabled(Request $request): RedirectResponse
+    {
+        $data = $request->validate(['multi_branch_enabled' => ['required', 'boolean']]);
+
+        CompanySetting::current()->update(['multi_branch_enabled' => $data['multi_branch_enabled']]);
+
+        return Redirect::route('pengaturan.index')->with(
+            'success',
+            $data['multi_branch_enabled']
+                ? 'Fitur Multi-Cabang diaktifkan.'
+                : 'Fitur Multi-Cabang dimatikan — menu Cabang & pemilih cabang tidak akan muncul.',
         );
     }
 }

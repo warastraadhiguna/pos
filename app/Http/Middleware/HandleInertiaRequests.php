@@ -75,6 +75,7 @@ class HandleInertiaRequests extends Middleware
                     'note_enabled' => $setting->note_enabled,
                     'variation_enabled' => $setting->variation_enabled,
                     'draft_enabled' => $setting->draft_enabled,
+                    'multi_branch_enabled' => $setting->multi_branch_enabled,
                 ];
             },
         ];

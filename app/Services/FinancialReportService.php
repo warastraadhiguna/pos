@@ -3,7 +3,11 @@
 namespace App\Services;
 
 use App\Models\Account;
+use App\Models\Expense;
 use App\Models\JournalLine;
+use App\Models\Outlet;
+use App\Models\Sale;
+use App\Models\StockOpname;
 use DateTimeInterface;
 use Illuminate\Support\Collection;
 
@@ -112,6 +116,17 @@ class FinancialReportService
      * total_expense, since cogs + operational = the same total_expense as
      * before, just partitioned.
      *
+     * `$outletId` (Multi-Cabang Lapisan 4) -- null (default) berarti GABUNGAN
+     * semua cabang, PERSIS perilaku sebelum Lapisan 4 ada (tidak ada
+     * perubahan sama sekali untuk pemanggil yang tidak mengoper ini).
+     * Diisi berarti cuma journal_lines yang berasal dari Sale/Expense/
+     * StockOpname CABANG itu yang dihitung -- lihat accountBalances().
+     * Laba-Rugi (beda dari Neraca) bermakna & SEIMBANG per-cabang karena
+     * pendapatan & beban murni transaksi periode, tidak ada pos "milik
+     * bisnis keseluruhan" seperti Modal/Aset Tetap yang bikin Neraca
+     * timpang kalau dipaksa per-cabang (lihat balanceSheet(), yang
+     * SENGAJA tidak menerima parameter ini sama sekali).
+     *
      * @param  DateTimeInterface|string  $startDate
      * @param  DateTimeInterface|string  $endDate
      * @return array{
@@ -123,9 +138,9 @@ class FinancialReportService
      *     net_income: string,
      * }
      */
-    public function incomeStatement(DateTimeInterface|string $startDate, DateTimeInterface|string $endDate): array
+    public function incomeStatement(DateTimeInterface|string $startDate, DateTimeInterface|string $endDate, ?int $outletId = null): array
     {
-        $balances = $this->accountBalances(fromDate: $startDate, upToDate: $endDate);
+        $balances = $this->accountBalances(fromDate: $startDate, upToDate: $endDate, outletId: $outletId);
 
         $revenues = $this->accountsForType('revenue', $balances);
         $expenses = $this->accountsForType('expense', $balances);
@@ -177,16 +192,27 @@ class FinancialReportService
      * Chart of Accounts (allAccountBalances()) deliberately does NOT apply
      * this filter -- it needs to show the header itself for hierarchy.
      *
-     * @return array<int, array{id: int, code: string, name: string, balance: string}>
+     * `outlet_id`/`outlet_name` (Multi-Cabang Lapisan 4) -- murni
+     * pengayaan info, TIDAK mengubah balance/total apa pun. Kosong untuk
+     * SEMUA akun global/bersama (mayoritas -- Penjualan, HPP, PPN, dst),
+     * terisi cuma untuk akun Kas/Bank yang di-`outlet_id`-kan ke cabang
+     * tertentu (Lapisan 1). Dipakai halaman Neraca untuk menyajikan
+     * bagian tambahan "Kas per Cabang" TANPA query baru -- lihat
+     * docblock balanceSheet() kenapa Neraca sendiri sengaja tidak
+     * difilter per-cabang.
+     *
+     * @return array<int, array{id: int, code: string, name: string, balance: string, outlet_id: ?int, outlet_name: ?string}>
      */
     private function accountsForType(string $type, Collection $balances): array
     {
-        return Account::where('type', $type)->whereDoesntHave('children')->orderBy('code')->get()
+        return Account::with('outlet:id,name')->where('type', $type)->whereDoesntHave('children')->orderBy('code')->get()
             ->map(fn (Account $account) => [
                 'id' => $account->id,
                 'code' => $account->code,
                 'name' => $account->name,
                 'balance' => $this->balanceFor($account, $balances),
+                'outlet_id' => $account->outlet_id,
+                'outlet_name' => $account->outlet?->name,
             ])
             ->all();
     }
@@ -254,9 +280,25 @@ class FinancialReportService
 
     /**
      * Sum debit/credit per account from journal_lines, optionally scoped to
-     * a date range on the parent journal.
+     * a date range on the parent journal AND (Multi-Cabang Lapisan 4) to a
+     * single outlet's own journals.
+     *
+     * `$outletId` scoping is by JOURNAL SOURCE, not a denormalized column
+     * on journals/journal_lines (none was added -- Lapisan 4 is pure
+     * harvesting of outlet_id that already exists on the source records,
+     * see rancangan). Only THREE source types ever post to revenue/expense
+     * accounts (confirmed by reading every PostingService::post() call
+     * site in this codebase): Sale (Penjualan/HPP/PPN Keluaran), Expense
+     * (beban operasional), and StockOpname (Selisih Persediaan) -- each
+     * resolved to an outlet differently (Sale/Expense carry outlet_id
+     * directly; StockOpname only carries warehouse_id, resolved via
+     * `warehouse.outlet_id`, same as every other stock-side table since
+     * Lapisan 1). This filter is exhaustive for accounts of type
+     * revenue/expense (what incomeStatement() reads) -- it is NEVER
+     * applied to balanceSheet() (asset/liability/equity), which doesn't
+     * pass $outletId at all, by design.
      */
-    private function accountBalances(DateTimeInterface|string|null $fromDate = null, DateTimeInterface|string|null $upToDate = null): Collection
+    private function accountBalances(DateTimeInterface|string|null $fromDate = null, DateTimeInterface|string|null $upToDate = null, ?int $outletId = null): Collection
     {
         $query = JournalLine::query()
             ->join('journals', 'journals.id', '=', 'journal_lines.journal_id')
@@ -271,6 +313,83 @@ class FinancialReportService
             $query->where('journals.date', '<=', $upToDate);
         }
 
+        if ($outletId !== null) {
+            $query->where(function ($outer) use ($outletId) {
+                $outer->where(function ($q) use ($outletId) {
+                    $q->where('journals.source_type', Sale::class)
+                        ->whereIn('journals.source_id', Sale::where('outlet_id', $outletId)->select('id'));
+                })->orWhere(function ($q) use ($outletId) {
+                    $q->where('journals.source_type', Expense::class)
+                        ->whereIn('journals.source_id', Expense::where('outlet_id', $outletId)->select('id'));
+                })->orWhere(function ($q) use ($outletId) {
+                    $q->where('journals.source_type', StockOpname::class)
+                        ->whereIn('journals.source_id', StockOpname::whereHas('warehouse', fn ($w) => $w->where('outlet_id', $outletId))->select('id'));
+                });
+            });
+        }
+
         return $query->get()->keyBy('account_id');
+    }
+
+    /**
+     * Multi-Cabang Lapisan 4 -- laba-rugi SETIAP cabang aktif bersanding,
+     * untuk halaman Perbandingan Cabang. Murni memanggil incomeStatement()
+     * per outlet (jumlah outlet kecil, N+1 di sini bukan masalah nyata) --
+     * TIDAK ADA rumus kedua yang bisa menyimpang dari laporan Laba-Rugi
+     * biasa yang sudah difilter per-cabang.
+     *
+     * @return array<int, array{outlet_id: int, outlet_name: string, is_headquarters: bool, total_revenue: string, total_cogs: string, total_expense: string, net_income: string}>
+     */
+    public function incomeStatementByOutlet(DateTimeInterface|string $startDate, DateTimeInterface|string $endDate): array
+    {
+        return Outlet::where('is_active', true)->orderByDesc('is_headquarters')->orderBy('name')->get()
+            ->map(function (Outlet $outlet) use ($startDate, $endDate) {
+                $report = $this->incomeStatement($startDate, $endDate, $outlet->id);
+
+                return [
+                    'outlet_id' => $outlet->id,
+                    'outlet_name' => $outlet->name,
+                    'is_headquarters' => $outlet->is_headquarters,
+                    'total_revenue' => $report['total_revenue'],
+                    'total_cogs' => $report['total_cogs'],
+                    'total_expense' => $report['total_expense'],
+                    'net_income' => $report['net_income'],
+                ];
+            })
+            ->values()
+            ->all();
+    }
+
+    /**
+     * Multi-Cabang Lapisan 4 -- saldo akun Kas/Bank yang `outlet_id`-nya
+     * terisi (Lapisan 1), dikelompokkan per cabang -- bagian tambahan
+     * "Kas per Cabang" di halaman Neraca. TIDAK menggantikan/mengubah
+     * balanceSheet() sama sekali -- murni rincian jujur di sampingnya
+     * (lihat docblock balanceSheet() untuk kenapa Neraca utuh tetap
+     * gabungan).
+     *
+     * @return array<int, array{outlet_id: int, outlet_name: string, account_code: string, account_name: string, balance: string}>
+     */
+    public function cashByOutlet(DateTimeInterface|string $asOfDate): array
+    {
+        $balances = $this->accountBalances(upToDate: $asOfDate);
+        $kasBankGroupId = Account::where('code', '1-1')->firstOrFail()->id;
+
+        return Account::with('outlet:id,name')
+            ->where('parent_id', $kasBankGroupId)
+            ->whereNotNull('outlet_id')
+            ->where('is_active', true)
+            ->orderBy('outlet_id')
+            ->orderBy('code')
+            ->get()
+            ->map(fn (Account $account) => [
+                'outlet_id' => $account->outlet_id,
+                'outlet_name' => $account->outlet?->name,
+                'account_code' => $account->code,
+                'account_name' => $account->name,
+                'balance' => $this->balanceFor($account, $balances),
+            ])
+            ->values()
+            ->all();
     }
 }

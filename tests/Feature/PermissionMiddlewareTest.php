@@ -76,7 +76,12 @@ class PermissionMiddlewareTest extends TestCase
         // always would in a real, seeded database (FoundationSeeder always
         // creates exactly one of each).
         CompanySetting::create(['ppn_active' => true]);
-        $outlet = Outlet::create(['name' => 'Outlet Pusat']);
+        // is_headquarters WAJIB true di sini (Multi-Cabang Lapisan 3) --
+        // BranchService::resolveCurrentOutlet() jatuh ke
+        // Outlet::where('is_headquarters', true)->firstOrFail() saat
+        // multi_branch_enabled mati (default), dipanggil oleh
+        // Kasir\SaleController::index() di bawah.
+        $outlet = Outlet::create(['name' => 'Outlet Pusat', 'is_active' => true, 'is_headquarters' => true]);
         Warehouse::create(['outlet_id' => $outlet->id, 'name' => 'Gudang Utama']);
 
         $role = $this->roleWith(['kasir.access', 'penjualan.view']);

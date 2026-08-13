@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\Account;
+use App\Models\Outlet;
 use InvalidArgumentException;
 
 /**
@@ -91,9 +92,15 @@ class CashAccountService
      * seperti Persediaan 1-1200/PPN Masukan 1-1300) dan otomatis jadi
      * child dari grup "Kas & Bank".
      *
+     * `$outletId` (Multi-Cabang Lapisan 1) -- opsional, null berarti akun
+     * global/bersama (perilaku hari ini, tidak berubah). Diisi berarti
+     * akun ini representasi laci/kas milik satu cabang tertentu. Belum
+     * di-enforce di alur transaksi mana pun (Lapisan 2/3), Lapisan 1 cuma
+     * menyimpan penugasannya.
+     *
      * @throws InvalidArgumentException
      */
-    public function createBankAccount(string $code, string $name): Account
+    public function createBankAccount(string $code, string $name, ?int $outletId = null): Account
     {
         if (! preg_match('/^1-11\d{2}$/', $code)) {
             throw new InvalidArgumentException('Kode akun bank baru harus berformat "1-11xx" (mis. 1-1100, 1-1101, dst).');
@@ -106,6 +113,7 @@ class CashAccountService
             'normal_balance' => 'debit',
             'parent_id' => $this->groupHeaderId(),
             'is_active' => true,
+            'outlet_id' => $outletId,
         ]);
     }
 
@@ -124,6 +132,35 @@ class CashAccountService
         $account->update(['is_active' => $active]);
 
         return $account->fresh();
+    }
+
+    /**
+     * Multi-Cabang Lapisan 3 -- akun Kas/Bank tunai penjualan CABANG itu
+     * seharusnya mendarat. Cabang PUSAT selalu Kas global (`1-1000`,
+     * perilaku hari ini, tidak berubah -- pusat tidak butuh akun
+     * ber-outlet_id sendiri). Cabang LAIN: akun Kas/Bank aktif PERTAMA
+     * (urut kode) yang `outlet_id`-nya cabang itu (ditugaskan admin lewat
+     * "Tambah Akun Bank" + pemilih cabang, Lapisan 1).
+     *
+     * Cabang yang BELUM PERNAH ditugaskan akun apa pun -> fallback KAS
+     * GLOBAL, bukan exception -- rancangan yang disetujui eksplisit
+     * meminta "jangan sampai transaksi gagal karena cabang belum punya
+     * kas". Ini konsisten dengan bagaimana `resolveCurrentOutlet()` juga
+     * tidak pernah melempar, selalu jatuh ke sesuatu yang aman.
+     */
+    public function resolveCashAccountCodeForOutlet(Outlet $outlet): string
+    {
+        if ($outlet->is_headquarters) {
+            return self::DEFAULT_CODE;
+        }
+
+        $account = Account::where('outlet_id', $outlet->id)
+            ->where('parent_id', $this->groupHeaderId())
+            ->where('is_active', true)
+            ->orderBy('code')
+            ->first();
+
+        return $account?->code ?? self::DEFAULT_CODE;
     }
 
     private function groupHeaderId(): int

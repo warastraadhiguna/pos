@@ -20,8 +20,25 @@ const costingLabel = {
     cost_only: 'Cost only',
 };
 
-export default function InventoryList({ items, warehouseId, warehouses }) {
+export default function InventoryList({ items, warehouseId, warehouses, stockByWarehouse, multiBranchEnabled }) {
     const [sortDir, setSortDir] = useState(null); // null | 'asc' | 'desc'
+    // Multi-Cabang Lapisan 4 -- "Bandingkan Semua Cabang": pivot item x
+    // gudang, alih-alih satu gudang yang dipilih di atas.
+    const [compareMode, setCompareMode] = useState(false);
+
+    const comparisonRows = useMemo(() => {
+        if (!compareMode) return [];
+
+        const byItem = new Map();
+        for (const row of stockByWarehouse) {
+            if (!byItem.has(row.item_id)) {
+                byItem.set(row.item_id, { sku: row.sku, name: row.name, stockByWarehouseId: {} });
+            }
+            byItem.get(row.item_id).stockByWarehouseId[row.warehouse_id] = row.stock;
+        }
+
+        return Array.from(byItem.values()).sort((a, b) => a.sku.localeCompare(b.sku));
+    }, [compareMode, stockByWarehouse]);
 
     const sortedItems = useMemo(() => {
         if (!sortDir) return items;
@@ -72,21 +89,83 @@ export default function InventoryList({ items, warehouseId, warehouses }) {
                             berarti stoknya 0 atau minus — perlu dibeli.
                         </p>
                         <div className="flex items-center gap-2">
-                            <label className="text-sm text-gray-600">Gudang</label>
-                            <select
-                                value={warehouseId}
-                                onChange={changeWarehouse}
-                                className="rounded-md border-gray-300 text-sm shadow-sm focus:border-primary focus:ring-primary"
-                            >
-                                {warehouses.map((warehouse) => (
-                                    <option key={warehouse.id} value={warehouse.id}>
-                                        {warehouse.name}
-                                    </option>
-                                ))}
-                            </select>
+                            {multiBranchEnabled && (
+                                <button
+                                    type="button"
+                                    onClick={() => setCompareMode((prev) => !prev)}
+                                    className="rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50"
+                                >
+                                    {compareMode ? 'Lihat Satu Gudang' : 'Bandingkan Semua Cabang'}
+                                </button>
+                            )}
+                            {!compareMode && (
+                                <>
+                                    <label className="text-sm text-gray-600">Gudang</label>
+                                    <select
+                                        value={warehouseId}
+                                        onChange={changeWarehouse}
+                                        className="rounded-md border-gray-300 text-sm shadow-sm focus:border-primary focus:ring-primary"
+                                    >
+                                        {warehouses.map((warehouse) => (
+                                            <option key={warehouse.id} value={warehouse.id}>
+                                                {warehouse.name}
+                                            </option>
+                                        ))}
+                                    </select>
+                                </>
+                            )}
                         </div>
                     </div>
 
+                    {compareMode && (
+                        <div className="overflow-hidden bg-white shadow-sm sm:rounded-lg">
+                            <div className="overflow-x-auto">
+                                <table className="min-w-full divide-y divide-gray-200">
+                                    <thead className="bg-gray-50">
+                                        <tr>
+                                            <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
+                                                Item
+                                            </th>
+                                            {warehouses.map((warehouse) => (
+                                                <th
+                                                    key={warehouse.id}
+                                                    className="px-6 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500"
+                                                >
+                                                    {warehouse.outlet?.name ?? warehouse.name}
+                                                </th>
+                                            ))}
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-gray-200 bg-white">
+                                        {comparisonRows.map((row) => (
+                                            <tr key={row.sku}>
+                                                <td className="whitespace-nowrap px-6 py-4 text-sm text-gray-900">
+                                                    {row.sku} — {row.name}
+                                                </td>
+                                                {warehouses.map((warehouse) => (
+                                                    <td
+                                                        key={warehouse.id}
+                                                        className="whitespace-nowrap px-6 py-4 text-right text-sm text-gray-600"
+                                                    >
+                                                        {formatQty(row.stockByWarehouseId[warehouse.id] ?? '0')}
+                                                    </td>
+                                                ))}
+                                            </tr>
+                                        ))}
+                                        {comparisonRows.length === 0 && (
+                                            <tr>
+                                                <td colSpan={warehouses.length + 1} className="px-6 py-6 text-center text-sm text-gray-500">
+                                                    Belum ada item dengan stok tercatat.
+                                                </td>
+                                            </tr>
+                                        )}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    )}
+
+                    {!compareMode && (
                     <div className="overflow-hidden bg-white shadow-sm sm:rounded-lg">
                         <table className="min-w-full divide-y divide-gray-200">
                             <thead className="bg-gray-50">
@@ -175,6 +254,7 @@ export default function InventoryList({ items, warehouseId, warehouses }) {
                             </tbody>
                         </table>
                     </div>
+                    )}
                 </div>
             </div>
         </AuthenticatedLayout>
