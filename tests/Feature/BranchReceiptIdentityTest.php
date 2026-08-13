@@ -223,6 +223,115 @@ class BranchReceiptIdentityTest extends TestCase
         $this->actingAs($user)->get(route('master.outlets.edit', $cabang))->assertOk();
     }
 
+    // ==================== Satukan pengaturan identitas: form Cabang Pusat -> company_settings ====================
+
+    public function test_editing_headquarters_via_kelola_cabang_saves_to_company_settings_not_outlet_columns(): void
+    {
+        $this->enableMultiBranch();
+        $admin = $this->userWithPermission('branches.manage');
+
+        $response = $this->actingAs($admin)->put(route('master.outlets.update', $this->headquarters), [
+            'name' => $this->headquarters->name,
+            'code' => $this->headquarters->code,
+            'address' => $this->headquarters->address,
+            'is_active' => true,
+            'is_headquarters' => true,
+            'store_name' => 'Toko Makmur Jaya',
+            'store_address' => 'Jl. Pusat No. 1',
+            'store_phone' => '021-5551234',
+            'store_footer' => 'Terima kasih sudah belanja',
+        ]);
+
+        $response->assertRedirect(route('master.outlets.index'));
+
+        $setting = CompanySetting::current()->fresh();
+        $this->assertSame('Toko Makmur Jaya', $setting->store_name);
+        $this->assertSame('Jl. Pusat No. 1', $setting->store_address);
+        $this->assertSame('021-5551234', $setting->store_phone);
+        $this->assertSame('Terima kasih sudah belanja', $setting->receipt_footer);
+
+        // TIDAK ditulis ke kolom outlets sama sekali -- outlet pusat tidak
+        // pernah punya baris "store_name", dan kolom phone/receipt_footer
+        // miliknya sendiri (yang TIDAK dikirim di request ini) tetap kosong.
+        $this->assertNull($this->headquarters->fresh()->phone);
+        $this->assertNull($this->headquarters->fresh()->receipt_footer);
+
+        // Bukti tuntas: resolveReceiptIdentity() (TIDAK diubah fitur ini)
+        // sekarang mengembalikan persis nilai yang baru disimpan.
+        $identity = $this->branches->resolveReceiptIdentity($this->headquarters->fresh());
+        $this->assertSame('Toko Makmur Jaya', $identity['name']);
+        $this->assertSame('Jl. Pusat No. 1', $identity['address']);
+        $this->assertSame('021-5551234', $identity['phone']);
+        $this->assertSame('Terima kasih sudah belanja', $identity['receipt_footer']);
+    }
+
+    public function test_editing_a_non_headquarters_branch_still_saves_to_its_own_outlet_columns_not_company_settings(): void
+    {
+        $this->enableMultiBranch();
+        CompanySetting::current()->update(['store_name' => 'Toko Pusat Tak Boleh Berubah']);
+        [$cabang] = $this->makeBranchWithWarehouse('Cabang Timur');
+        $admin = $this->userWithPermission('branches.manage');
+
+        // store_* SENGAJA ikut dikirim (mensimulasikan payload mentah/tidak
+        // wajar) -- harus diabaikan total untuk cabang non-pusat.
+        $response = $this->actingAs($admin)->put(route('master.outlets.update', $cabang), [
+            'name' => $cabang->name,
+            'address' => 'Jl. Timur No. 9',
+            'phone' => '023-3333333',
+            'receipt_footer' => 'Footer Cabang Timur',
+            'is_active' => true,
+            'is_headquarters' => false,
+            'store_name' => 'Nama Nyasar',
+            'store_phone' => '000-0000000',
+        ]);
+
+        $response->assertRedirect(route('master.outlets.index'));
+        $cabang->refresh();
+        $this->assertSame('Jl. Timur No. 9', $cabang->address);
+        $this->assertSame('023-3333333', $cabang->phone);
+        $this->assertSame('Footer Cabang Timur', $cabang->receipt_footer);
+
+        $this->assertSame('Toko Pusat Tak Boleh Berubah', CompanySetting::current()->fresh()->store_name, 'store_* di payload cabang non-pusat harus diabaikan total.');
+    }
+
+    public function test_promoting_a_branch_to_headquarters_saves_its_submitted_identity_to_company_settings(): void
+    {
+        $this->enableMultiBranch();
+        CompanySetting::current()->update(['store_name' => 'Toko Pusat Lama']);
+        [$cabangBaru] = $this->makeBranchWithWarehouse('Cabang Yang Dipromosikan');
+        $admin = $this->userWithPermission('branches.manage');
+
+        $response = $this->actingAs($admin)->put(route('master.outlets.update', $cabangBaru), [
+            'name' => $cabangBaru->name,
+            'is_active' => true,
+            'is_headquarters' => true, // promosi
+            'store_name' => 'Toko Pusat Baru',
+            'store_phone' => '021-9998888',
+        ]);
+
+        $response->assertRedirect(route('master.outlets.index'));
+        $this->assertTrue($cabangBaru->fresh()->is_headquarters);
+        $this->assertFalse($this->headquarters->fresh()->is_headquarters, 'Pusat lama otomatis lepas status (BranchService::setHeadquarters(), tidak diubah fitur ini).');
+
+        $setting = CompanySetting::current()->fresh();
+        $this->assertSame('Toko Pusat Baru', $setting->store_name);
+        $this->assertSame('021-9998888', $setting->store_phone);
+    }
+
+    public function test_outlet_edit_page_provides_multi_branch_flag_and_current_store_identity_for_prefilling(): void
+    {
+        $this->enableMultiBranch();
+        CompanySetting::current()->update(['store_name' => 'Toko Untuk Prefill']);
+        $admin = $this->userWithPermission('branches.manage');
+
+        $response = $this->actingAs($admin)->get(route('master.outlets.edit', $this->headquarters));
+
+        $response->assertInertia(fn ($page) => $page
+            ->where('multiBranchEnabled', true)
+            ->where('storeIdentity.store_name', 'Toko Untuk Prefill'),
+        );
+    }
+
     // ==================== Sync mobile ====================
 
     /** @return array{0: User, 1: string} [user, bearer token] */

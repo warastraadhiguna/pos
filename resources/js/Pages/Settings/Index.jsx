@@ -584,66 +584,76 @@ export default function Index({
                             Identitas Toko
                         </h3>
                         <div className="rounded-lg bg-white p-6 shadow-sm ring-1 ring-gray-200">
-                            <p className="text-sm text-gray-600">
-                                Dicetak di bagian atas struk (kasir web &
-                                aplikasi mobile). Boleh dikosongkan.
-                            </p>
-                            {multiBranchEnabled && (
-                                <p className="mt-2 text-sm text-gray-600">
-                                    Ini identitas Cabang Pusat, JUGA jadi
-                                    identitas default untuk cabang lain yang
-                                    belum mengisi identitasnya sendiri (Kelola
-                                    Cabang &gt; Identitas Struk).
+                            {multiBranchEnabled ? (
+                                <p className="text-sm text-gray-600">
+                                    Multi-Cabang aktif — identitas struk (nama,
+                                    alamat, telepon, footer) sekarang diatur di{' '}
+                                    <Link
+                                        href={route('master.outlets.index')}
+                                        className="text-primary hover:underline"
+                                    >
+                                        Kelola Cabang
+                                    </Link>{' '}
+                                    (termasuk Cabang Pusat), bukan di sini lagi
+                                    — supaya tidak ada dua tempat mengatur hal
+                                    yang sama.
                                 </p>
-                            )}
+                            ) : (
+                                <>
+                                    <p className="text-sm text-gray-600">
+                                        Dicetak di bagian atas struk (kasir web &
+                                        aplikasi mobile). Boleh dikosongkan.
+                                    </p>
 
-                            <form onSubmit={submitStoreIdentity} className="mt-4 space-y-4">
-                                <div>
-                                    <InputLabel htmlFor="store_name" value="Nama Toko" />
-                                    <TextInput
-                                        id="store_name"
-                                        className="mt-1 block w-full"
-                                        value={storeForm.store_name}
-                                        onChange={(e) =>
-                                            setStoreForm((prev) => ({
-                                                ...prev,
-                                                store_name: e.target.value,
-                                            }))
-                                        }
-                                    />
-                                </div>
-                                <div>
-                                    <InputLabel htmlFor="store_address" value="Alamat" />
-                                    <TextInput
-                                        id="store_address"
-                                        className="mt-1 block w-full"
-                                        value={storeForm.store_address}
-                                        onChange={(e) =>
-                                            setStoreForm((prev) => ({
-                                                ...prev,
-                                                store_address: e.target.value,
-                                            }))
-                                        }
-                                    />
-                                </div>
-                                <div>
-                                    <InputLabel htmlFor="store_phone" value="Telepon" />
-                                    <TextInput
-                                        id="store_phone"
-                                        className="mt-1 block w-full"
-                                        value={storeForm.store_phone}
-                                        onChange={(e) =>
-                                            setStoreForm((prev) => ({
-                                                ...prev,
-                                                store_phone: e.target.value,
-                                            }))
-                                        }
-                                    />
-                                </div>
-                                <PrimaryButton type="submit" disabled={savingStore}>
-                                    Simpan Identitas Toko
-                                </PrimaryButton>
-                            </form>
+                                    <form onSubmit={submitStoreIdentity} className="mt-4 space-y-4">
+                                        <div>
+                                            <InputLabel htmlFor="store_name" value="Nama Toko" />
+                                            <TextInput
+                                                id="store_name"
+                                                className="mt-1 block w-full"
+                                                value={storeForm.store_name}
+                                                onChange={(e) =>
+                                                    setStoreForm((prev) => ({
+                                                        ...prev,
+                                                        store_name: e.target.value,
+                                                    }))
+                                                }
+                                            />
+                                        </div>
+                                        <div>
+                                            <InputLabel htmlFor="store_address" value="Alamat" />
+                                            <TextInput
+                                                id="store_address"
+                                                className="mt-1 block w-full"
+                                                value={storeForm.store_address}
+                                                onChange={(e) =>
+                                                    setStoreForm((prev) => ({
+                                                        ...prev,
+                                                        store_address: e.target.value,
+                                                    }))
+                                                }
+                                            />
+                                        </div>
+                                        <div>
+                                            <InputLabel htmlFor="store_phone" value="Telepon" />
+                                            <TextInput
+                                                id="store_phone"
+                                                className="mt-1 block w-full"
+                                                value={storeForm.store_phone}
+                                                onChange={(e) =>
+                                                    setStoreForm((prev) => ({
+                                                        ...prev,
+                                                        store_phone: e.target.value,
+                                                    }))
+                                                }
+                                            />
+                                        </div>
+                                        <PrimaryButton type="submit" disabled={savingStore}>
+                                            Simpan Identitas Toko
+                                        </PrimaryButton>
+                                    </form>
+                                </>
+                            )}
                         </div>
                     </section>
 
@@ -654,26 +664,42 @@ export default function Index({
                             Struk
                         </h3>
                         <div className="rounded-lg bg-white p-6 shadow-sm ring-1 ring-gray-200">
-                            <p className="text-sm text-gray-600">
-                                Baris teks di bagian paling bawah struk.
-                            </p>
+                            {multiBranchEnabled ? (
+                                <p className="text-sm text-gray-600">
+                                    Multi-Cabang aktif — footer struk sekarang
+                                    diatur di{' '}
+                                    <Link
+                                        href={route('master.outlets.index')}
+                                        className="text-primary hover:underline"
+                                    >
+                                        Kelola Cabang
+                                    </Link>{' '}
+                                    (termasuk Cabang Pusat), bukan di sini lagi.
+                                </p>
+                            ) : (
+                                <>
+                                    <p className="text-sm text-gray-600">
+                                        Baris teks di bagian paling bawah struk.
+                                    </p>
 
-                            <form onSubmit={submitReceiptFooter} className="mt-4 space-y-4">
-                                <div>
-                                    <InputLabel htmlFor="receipt_footer" value="Footer Struk" />
-                                    <textarea
-                                        id="receipt_footer"
-                                        rows={2}
-                                        className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary focus:ring-primary"
-                                        placeholder="Terima kasih atas kunjungan Anda"
-                                        value={footerForm}
-                                        onChange={(e) => setFooterForm(e.target.value)}
-                                    />
-                                </div>
-                                <PrimaryButton type="submit" disabled={savingFooter}>
-                                    Simpan Footer Struk
-                                </PrimaryButton>
-                            </form>
+                                    <form onSubmit={submitReceiptFooter} className="mt-4 space-y-4">
+                                        <div>
+                                            <InputLabel htmlFor="receipt_footer" value="Footer Struk" />
+                                            <textarea
+                                                id="receipt_footer"
+                                                rows={2}
+                                                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary focus:ring-primary"
+                                                placeholder="Terima kasih atas kunjungan Anda"
+                                                value={footerForm}
+                                                onChange={(e) => setFooterForm(e.target.value)}
+                                            />
+                                        </div>
+                                        <PrimaryButton type="submit" disabled={savingFooter}>
+                                            Simpan Footer Struk
+                                        </PrimaryButton>
+                                    </form>
+                                </>
+                            )}
 
                             <div className="mt-6 border-t border-gray-100 pt-4">
                                 <label className="flex cursor-pointer items-start gap-3">

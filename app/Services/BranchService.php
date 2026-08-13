@@ -33,6 +33,7 @@ class BranchService
         return DB::transaction(function () use ($data) {
             $isHeadquarters = $data['is_headquarters'] ?? false;
             unset($data['is_headquarters']);
+            $identity = $this->pullReceiptIdentity($data);
 
             $outlet = Outlet::create([...$data, 'is_headquarters' => false]);
 
@@ -45,7 +46,10 @@ class BranchService
                 $this->setHeadquarters($outlet);
             }
 
-            return $outlet->fresh();
+            $outlet = $outlet->fresh();
+            $this->saveReceiptIdentityIfHeadquarters($outlet, $identity);
+
+            return $outlet;
         });
     }
 
@@ -63,6 +67,7 @@ class BranchService
         return DB::transaction(function () use ($outlet, $data) {
             $wantsHeadquarters = $data['is_headquarters'] ?? $outlet->is_headquarters;
             unset($data['is_headquarters']);
+            $identity = $this->pullReceiptIdentity($data);
 
             if ($outlet->is_headquarters && ! $wantsHeadquarters) {
                 throw new InvalidArgumentException(
@@ -76,7 +81,10 @@ class BranchService
                 $this->setHeadquarters($outlet);
             }
 
-            return $outlet->fresh();
+            $outlet = $outlet->fresh();
+            $this->saveReceiptIdentityIfHeadquarters($outlet, $identity);
+
+            return $outlet;
         });
     }
 
@@ -187,5 +195,60 @@ class BranchService
             'phone' => $outlet->phone ?: $global->store_phone,
             'receipt_footer' => $outlet->receipt_footer ?: $global->receipt_footer,
         ];
+    }
+
+    /**
+     * Satukan pengaturan identitas (lihat rancangan yang disetujui) --
+     * `store_name`/`store_address`/`store_phone`/`store_footer` di $data
+     * (kalau ada) BUKAN kolom `outlets`, jadi ditarik keluar SEBELUM
+     * dipakai `Outlet::create()`/`update()` (dan tidak akan pernah masuk
+     * kolom outlets biarpun bukan bagian Fillable-nya -- eksplisit di sini
+     * supaya jelas disengaja, bukan diam-diam terbuang lewat mass-
+     * assignment). Dipakai createOutlet()/updateOutlet() saja.
+     *
+     * @return array{store_name: ?string, store_address: ?string, store_phone: ?string, store_footer: ?string}
+     */
+    private function pullReceiptIdentity(array &$data): array
+    {
+        $identity = [
+            'store_name' => $data['store_name'] ?? null,
+            'store_address' => $data['store_address'] ?? null,
+            'store_phone' => $data['store_phone'] ?? null,
+            'store_footer' => $data['store_footer'] ?? null,
+        ];
+
+        unset($data['store_name'], $data['store_address'], $data['store_phone'], $data['store_footer']);
+
+        return $identity;
+    }
+
+    /**
+     * SIMETRIS dengan resolveReceiptIdentity() (baca): kalau `$outlet`
+     * berstatus headquarters SETELAH disimpan (termasuk baru saja
+     * dipromosikan lewat setHeadquarters() di transaksi yang sama),
+     * identitas struk ditulis ke `company_settings` GLOBAL -- BUKAN kolom
+     * `outlets` (yang sudah ditulis normal lewat Outlet::create()/update()
+     * biasa, tidak pernah dibaca resolveReceiptIdentity() untuk
+     * headquarters apa pun isinya). Cabang non-headquarters: tidak
+     * melakukan apa pun di sini -- identitasnya sudah tersimpan langsung ke
+     * kolom outlet lewat jalur normal, sama seperti sebelum fitur ini.
+     *
+     * `$outlet` HARUS state PALING BARU (`fresh()`, setelah
+     * update()/setHeadquarters() selesai) -- caller yang menjamin ini,
+     * bukan method ini yang query ulang, supaya tetap dalam satu
+     * DB::transaction() yang sama (atomik dengan penyimpanan outlet-nya).
+     */
+    private function saveReceiptIdentityIfHeadquarters(Outlet $outlet, array $identity): void
+    {
+        if (! $outlet->is_headquarters) {
+            return;
+        }
+
+        CompanySetting::current()->update([
+            'store_name' => $identity['store_name'],
+            'store_address' => $identity['store_address'],
+            'store_phone' => $identity['store_phone'],
+            'receipt_footer' => $identity['store_footer'],
+        ]);
     }
 }

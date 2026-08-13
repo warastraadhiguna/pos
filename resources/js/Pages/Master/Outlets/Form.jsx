@@ -8,7 +8,7 @@ import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import { Head, Link, useForm } from '@inertiajs/react';
 import { useRef } from 'react';
 
-export default function Form({ outlet }) {
+export default function Form({ outlet, multiBranchEnabled, storeIdentity }) {
     const editing = outlet !== null;
     // Cabang yang SAAT INI berstatus pusat tidak boleh dilepas langsung
     // dari sini (lihat BranchService::updateOutlet()) -- pindahkan status
@@ -21,6 +21,19 @@ export default function Form({ outlet }) {
         address: outlet?.address ?? '',
         phone: outlet?.phone ?? '',
         receipt_footer: outlet?.receipt_footer ?? '',
+        // Identitas Cabang Pusat (lihat rancangan "satukan pengaturan
+        // identitas" yang disetujui) -- BUKAN kolom outlet, disimpan ke
+        // company_settings GLOBAL di balik layar (lihat
+        // BranchService::saveReceiptIdentityIfHeadquarters()). Nilai awal
+        // SELALU dari storeIdentity (company_settings TERKINI), terlepas
+        // outlet ini sudah/belum/sedang-dipromosikan jadi pusat -- supaya
+        // kalau checkbox "Cabang Pusat" dicentang, admin melihat nilai yang
+        // SUNGGUH akan dipakai (bukan form kosong yang kalau disimpan diam-
+        // diam mengosongkan identitas toko).
+        store_name: storeIdentity?.store_name ?? '',
+        store_address: storeIdentity?.store_address ?? '',
+        store_phone: storeIdentity?.store_phone ?? '',
+        store_footer: storeIdentity?.store_footer ?? '',
         is_active: outlet?.is_active ?? true,
         is_headquarters: outlet?.is_headquarters ?? false,
     });
@@ -29,10 +42,9 @@ export default function Form({ outlet }) {
     // TERSIMPAN) -- BranchService::resolveReceiptIdentity() SELALU pakai
     // Identitas Toko global untuk cabang pusat, jadi begitu checkbox "Cabang
     // Pusat" dicentang (baik cabang yang MEMANG sudah pusat, atau cabang
-    // lain yang SEDANG dipromosikan jadi pusat), field telepon/footer di
-    // bawah langsung tidak berpengaruh apa pun -- UI harus mencerminkan itu
-    // seketika, bukan cuma setelah disimpan, supaya tidak ada jendela
-    // "field terlihat bisa diisi padahal sudah tidak dipakai".
+    // lain yang SEDANG dipromosikan jadi pusat), field telepon/footer
+    // KOLOM OUTLET di bawah langsung tidak berpengaruh apa pun -- UI harus
+    // mencerminkan itu seketika, bukan cuma setelah disimpan.
     const identityFollowsGlobalSettings = data.is_headquarters;
 
     const formRef = useRef(null);
@@ -138,7 +150,93 @@ export default function Form({ outlet }) {
                                     <h3 className="text-sm font-semibold text-gray-900">
                                         Identitas Struk
                                     </h3>
-                                    {identityFollowsGlobalSettings ? (
+                                    {identityFollowsGlobalSettings && multiBranchEnabled && (
+                                        <div className="mt-1 space-y-4">
+                                            <p className="text-xs text-gray-500">
+                                                Cabang Pusat memakai Identitas
+                                                Toko (dulu diatur di halaman
+                                                Pengaturan) — sekarang bisa
+                                                diedit langsung di sini supaya
+                                                tidak ada dua tempat mengatur
+                                                hal yang sama. Field ini
+                                                menyimpan ke pengaturan toko
+                                                global, JUGA jadi identitas
+                                                default untuk cabang lain yang
+                                                belum mengisi identitasnya
+                                                sendiri.
+                                            </p>
+
+                                            <div>
+                                                <InputLabel htmlFor="store_name" value="Nama Toko" />
+                                                <TextInput
+                                                    id="store_name"
+                                                    className="mt-1 block w-full"
+                                                    value={data.store_name}
+                                                    onChange={(e) =>
+                                                        setData('store_name', e.target.value)
+                                                    }
+                                                />
+                                                <InputError
+                                                    className="mt-2"
+                                                    message={errors.store_name}
+                                                />
+                                            </div>
+
+                                            <div>
+                                                <InputLabel htmlFor="store_address" value="Alamat Toko" />
+                                                <TextInput
+                                                    id="store_address"
+                                                    className="mt-1 block w-full"
+                                                    value={data.store_address}
+                                                    onChange={(e) =>
+                                                        setData('store_address', e.target.value)
+                                                    }
+                                                />
+                                                <InputError
+                                                    className="mt-2"
+                                                    message={errors.store_address}
+                                                />
+                                            </div>
+
+                                            <div>
+                                                <InputLabel htmlFor="store_phone" value="Telepon" />
+                                                <TextInput
+                                                    id="store_phone"
+                                                    className="mt-1 block w-full"
+                                                    value={data.store_phone}
+                                                    onChange={(e) =>
+                                                        setData('store_phone', e.target.value)
+                                                    }
+                                                />
+                                                <InputError
+                                                    className="mt-2"
+                                                    message={errors.store_phone}
+                                                />
+                                            </div>
+
+                                            <div>
+                                                <InputLabel
+                                                    htmlFor="store_footer"
+                                                    value="Footer Struk"
+                                                />
+                                                <textarea
+                                                    id="store_footer"
+                                                    rows={2}
+                                                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary focus:ring-primary"
+                                                    value={data.store_footer}
+                                                    onChange={(e) =>
+                                                        setData('store_footer', e.target.value)
+                                                    }
+                                                />
+                                                <InputError
+                                                    className="mt-2"
+                                                    message={errors.store_footer}
+                                                />
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {identityFollowsGlobalSettings && !multiBranchEnabled && (
                                         <p className="mt-1 text-sm text-gray-600">
                                             Identitas cabang pusat SELALU
                                             mengikuti{' '}
@@ -155,7 +253,9 @@ export default function Form({ outlet }) {
                                             terlihat seperti bisa diisi padahal
                                             tidak berpengaruh ke struk.
                                         </p>
-                                    ) : (
+                                    )}
+
+                                    {!identityFollowsGlobalSettings && (
                                         <div className="mt-1 space-y-4">
                                             <p className="text-xs text-gray-500">
                                                 Ditampilkan di header struk
@@ -163,7 +263,7 @@ export default function Form({ outlet }) {
                                                 "Nama Cabang"/alamat pakai
                                                 "Alamat" di atas). Kosongkan
                                                 field mana pun untuk memakai
-                                                Identitas Toko (Pengaturan)
+                                                Identitas Toko (Cabang Pusat)
                                                 sebagai gantinya — cabang baru
                                                 yang belum diisi tetap mencetak
                                                 struk dengan identitas pusat,

@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Master;
 
 use App\Http\Controllers\Controller;
+use App\Models\CompanySetting;
 use App\Models\Outlet;
 use App\Services\BranchService;
 use Illuminate\Http\RedirectResponse;
@@ -35,6 +36,7 @@ class OutletController extends Controller
     {
         return Inertia::render('Master/Outlets/Form', [
             'outlet' => null,
+            ...$this->identityFormOptions(),
         ]);
     }
 
@@ -49,6 +51,7 @@ class OutletController extends Controller
     {
         return Inertia::render('Master/Outlets/Form', [
             'outlet' => $outlet,
+            ...$this->identityFormOptions(),
         ]);
     }
 
@@ -74,6 +77,35 @@ class OutletController extends Controller
         return $this->deleteOrFail($outlet, 'master.outlets.index', 'Cabang');
     }
 
+    /**
+     * Satukan pengaturan identitas (lihat rancangan yang disetujui) --
+     * `multiBranchEnabled` menentukan tampilan form (lihat Outlets/Form.jsx:
+     * cabang pusat menampilkan field identitas company_settings yang bisa
+     * diedit LANGSUNG di sini kalau true, atau catatan+tautan ke Pengaturan
+     * kalau false/edge-case akses langsung). `storeIdentity` mengisi nilai
+     * AWAL field itu -- dipakai baik saat edit outlet yang MEMANG sudah
+     * pusat, maupun saat create/edit outlet lain yang SEDANG dipromosikan
+     * jadi pusat (checkbox "Cabang Pusat" dicentang), supaya admin melihat
+     * nilai company_settings TERKINI sebagai titik awal, bukan form kosong
+     * yang kalau disimpan diam-diam mengosongkan identitas toko.
+     *
+     * @return array{multiBranchEnabled: bool, storeIdentity: array{store_name: ?string, store_address: ?string, store_phone: ?string, store_footer: ?string}}
+     */
+    private function identityFormOptions(): array
+    {
+        $setting = CompanySetting::current();
+
+        return [
+            'multiBranchEnabled' => $setting->multi_branch_enabled,
+            'storeIdentity' => [
+                'store_name' => $setting->store_name,
+                'store_address' => $setting->store_address,
+                'store_phone' => $setting->store_phone,
+                'store_footer' => $setting->receipt_footer,
+            ],
+        ];
+    }
+
     private function validateData(Request $request, ?Outlet $outlet): array
     {
         $data = $request->validate([
@@ -85,9 +117,17 @@ class OutletController extends Controller
             // "belum diisi") -- BranchService::resolveReceiptIdentity()
             // jatuh ke identitas company_settings global kalau kosong,
             // jadi mengosongkan field ini TIDAK PERNAH membuat struk
-            // tanpa identitas.
+            // tanpa identitas. `phone`/`receipt_footer` = kolom outlet
+            // (cabang NON-pusat); `store_*` = company_settings GLOBAL
+            // (dipakai KALAU outlet ini pusat -- lihat
+            // BranchService::pullReceiptIdentity()/saveReceiptIdentityIfHeadquarters(),
+            // diabaikan total kalau bukan pusat).
             'phone' => ['nullable', 'string', 'max:255'],
             'receipt_footer' => ['nullable', 'string', 'max:255'],
+            'store_name' => ['nullable', 'string', 'max:255'],
+            'store_address' => ['nullable', 'string', 'max:255'],
+            'store_phone' => ['nullable', 'string', 'max:255'],
+            'store_footer' => ['nullable', 'string', 'max:255'],
             'is_active' => ['boolean'],
             'is_headquarters' => ['boolean'],
         ]);
