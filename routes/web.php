@@ -99,6 +99,16 @@ Route::middleware(['auth', 'verified', 'permission:company-settings.manage'])->p
     Route::put('/variasi', [SettingController::class, 'updateVariationEnabled'])->name('variasi.update');
     Route::put('/draft', [SettingController::class, 'updateDraftEnabled'])->name('draft.update');
     Route::put('/qris', [SettingController::class, 'updateQris'])->name('qris.update');
+});
+
+// Role Developer (hidden super-admin) -- toggle Multi-Cabang & grace period
+// Device Binding adalah pengaturan KERANGKA sistem, bukan operasi bisnis
+// (lihat rancangan yang disetujui), jadi digerbangi permission TERPISAH
+// dari `company-settings.manage` di atas walau berbagi prefix URL/halaman
+// yang sama (pola sama `devices.manage` di bawah, prefix `pengaturan/*`
+// berbeda grup middleware). Admin existing kehilangan akses ini -- lihat
+// migrasi `..._400200_.../..._400300_...` untuk transisi amannya.
+Route::middleware(['auth', 'verified', 'permission:system.manage'])->prefix('pengaturan')->name('pengaturan.')->group(function () {
     Route::put('/device-binding-grace-period', [SettingController::class, 'updateDeviceBindingGracePeriod'])->name('device-binding-grace-period.update');
     Route::put('/multi-cabang', [SettingController::class, 'updateMultiBranchEnabled'])->name('multi-branch.update');
 });

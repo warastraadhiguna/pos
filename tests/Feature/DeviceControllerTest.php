@@ -95,11 +95,14 @@ class DeviceControllerTest extends TestCase
         $this->assertNull(PersonalAccessToken::find($tokenId));
     }
 
-    // (g) Admin bisa memperpanjang/mempersingkat/mematikan grace period
-    // kapan saja lewat halaman Pengaturan yang sudah ada.
-    public function test_admin_can_extend_and_disable_the_device_binding_grace_period(): void
+    // (g) Bisa memperpanjang/mempersingkat/mematikan grace period kapan
+    // saja lewat halaman Pengaturan yang sudah ada -- sejak role Developer
+    // (hidden super-admin) ada, ini pengaturan KERANGKA sistem, digerbangi
+    // system.manage (developer-only), BUKAN lagi company-settings.manage
+    // biasa. Lihat rancangan yang disetujui & routes/web.php.
+    public function test_a_user_with_system_manage_can_extend_and_disable_the_device_binding_grace_period(): void
     {
-        $admin = User::factory()->create(['role_id' => $this->roleWith(['company-settings.manage'])->id]);
+        $admin = User::factory()->create(['role_id' => $this->roleWith(['system.manage'])->id]);
 
         $this->actingAs($admin)->put(route('pengaturan.device-binding-grace-period.update'), [
             'action' => 'extend',

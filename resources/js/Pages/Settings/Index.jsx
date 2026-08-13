@@ -20,6 +20,7 @@ const formatDateTime = (iso) =>
 // baru ke depan cukup tambah SATU bagian berjudul di sini (pola yang sama
 // dengan dua bagian di bawah), bukan halaman terpisah lagi.
 export default function Index({
+    canManageSystem,
     ppnActive,
     productDisplayMode,
     storeName,
@@ -106,6 +107,10 @@ export default function Index({
     const quickAmountsErrors = usePage().props.errors ?? {};
 
     const pendingValue = !ppnActive;
+
+    const ppnLogs = logs.filter((log) => log.setting_key === 'ppn_active');
+    const multiBranchLogs = logs.filter((log) => log.setting_key === 'multi_branch_enabled');
+    const gracePeriodLogs = logs.filter((log) => log.setting_key === 'device_binding_grace_period');
 
     const submit = () => {
         setProcessing(true);
@@ -428,13 +433,13 @@ export default function Index({
                             <h4 className="mb-3 font-semibold text-gray-900">
                                 Riwayat Perubahan
                             </h4>
-                            {logs.length === 0 ? (
+                            {ppnLogs.length === 0 ? (
                                 <p className="text-sm text-gray-500">
                                     Belum pernah diubah lewat halaman ini.
                                 </p>
                             ) : (
                                 <ul className="space-y-2">
-                                    {logs.map((log, index) => (
+                                    {ppnLogs.map((log, index) => (
                                         <li
                                             key={index}
                                             className="flex items-center justify-between border-b border-gray-100 py-2 text-sm last:border-b-0"
@@ -1078,126 +1083,188 @@ export default function Index({
                         </div>
                     </section>
 
-                    <hr className="border-gray-200" />
+                    {canManageSystem && (
+                        <>
+                            <hr className="border-gray-200" />
 
-                    <section>
-                        <h3 className="mb-3 text-base font-semibold text-gray-900">
-                            Multi-Cabang
-                        </h3>
-                        <div className="rounded-lg bg-white p-6 shadow-sm ring-1 ring-gray-200">
-                            <label className="flex cursor-pointer items-start gap-3">
-                                <input
-                                    type="checkbox"
-                                    className="mt-1 rounded text-primary focus:ring-primary"
-                                    checked={multiBranchOn}
-                                    disabled={savingMultiBranch}
-                                    onChange={(e) =>
-                                        submitMultiBranchEnabled(e.target.checked)
-                                    }
-                                />
-                                <span>
-                                    <span className="block font-medium text-gray-900">
-                                        Aktifkan fitur Multi-Cabang
-                                    </span>
-                                    <span className="block text-sm text-gray-500">
-                                        Kalau aktif, menu "Cabang" muncul
-                                        (kelola daftar cabang, tandai
-                                        cabang pusat) dan pemilih cabang
-                                        muncul di halaman Kelola Pengguna
-                                        &amp; Kelola Perangkat. Kalau mati
-                                        (default, cocok untuk toko satu
-                                        lokasi), semuanya tersembunyi —
-                                        tidak ada yang berubah dari
-                                        perilaku sekarang.
-                                    </span>
-                                </span>
-                            </label>
-                            {multiBranchOn && (
-                                <div className="mt-4 border-t border-gray-100 pt-4">
-                                    <Link href={route('master.outlets.index')}>
-                                        <SecondaryButton type="button">
-                                            Kelola Cabang
+                            <section>
+                                <h3 className="mb-3 text-base font-semibold text-gray-900">
+                                    Multi-Cabang
+                                </h3>
+                                <div className="rounded-lg bg-white p-6 shadow-sm ring-1 ring-gray-200">
+                                    <label className="flex cursor-pointer items-start gap-3">
+                                        <input
+                                            type="checkbox"
+                                            className="mt-1 rounded text-primary focus:ring-primary"
+                                            checked={multiBranchOn}
+                                            disabled={savingMultiBranch}
+                                            onChange={(e) =>
+                                                submitMultiBranchEnabled(e.target.checked)
+                                            }
+                                        />
+                                        <span>
+                                            <span className="block font-medium text-gray-900">
+                                                Aktifkan fitur Multi-Cabang
+                                            </span>
+                                            <span className="block text-sm text-gray-500">
+                                                Kalau aktif, menu "Cabang" muncul
+                                                (kelola daftar cabang, tandai
+                                                cabang pusat) dan pemilih cabang
+                                                muncul di halaman Kelola Pengguna
+                                                &amp; Kelola Perangkat. Kalau mati
+                                                (default, cocok untuk toko satu
+                                                lokasi), semuanya tersembunyi —
+                                                tidak ada yang berubah dari
+                                                perilaku sekarang.
+                                            </span>
+                                        </span>
+                                    </label>
+                                    {multiBranchOn && (
+                                        <div className="mt-4 border-t border-gray-100 pt-4">
+                                            <Link href={route('master.outlets.index')}>
+                                                <SecondaryButton type="button">
+                                                    Kelola Cabang
+                                                </SecondaryButton>
+                                            </Link>
+                                        </div>
+                                    )}
+
+                                    {multiBranchLogs.length > 0 && (
+                                        <div className="mt-4 border-t border-gray-100 pt-4">
+                                            <h4 className="mb-2 text-sm font-semibold text-gray-900">
+                                                Riwayat Perubahan
+                                            </h4>
+                                            <ul className="space-y-2">
+                                                {multiBranchLogs.map((log, index) => (
+                                                    <li
+                                                        key={index}
+                                                        className="flex items-center justify-between border-b border-gray-100 py-2 text-sm last:border-b-0"
+                                                    >
+                                                        <span className="text-gray-700">
+                                                            {log.multi_branch_enabled
+                                                                ? 'Diaktifkan'
+                                                                : 'Dinonaktifkan'}{' '}
+                                                            oleh{' '}
+                                                            <span className="font-medium">
+                                                                {log.changed_by}
+                                                            </span>
+                                                        </span>
+                                                        <span className="text-gray-400">
+                                                            {formatDateTime(log.created_at)}
+                                                        </span>
+                                                    </li>
+                                                ))}
+                                            </ul>
+                                        </div>
+                                    )}
+                                </div>
+                            </section>
+
+                            <hr className="border-gray-200" />
+
+                            <section>
+                                <h3 className="mb-3 text-base font-semibold text-gray-900">
+                                    Device Binding — Grace Period
+                                </h3>
+                                <div className="rounded-lg bg-white p-6 shadow-sm ring-1 ring-gray-200">
+                                    <p className="text-sm text-gray-600">
+                                        Selama jendela ini aktif, perangkat mobile
+                                        BARU (belum pernah tercatat) otomatis
+                                        disetujui saat login pertama — tidak perlu
+                                        persetujuan admin manual. Dipakai supaya HP/
+                                        tablet yang sudah dipakai sekarang tidak
+                                        tiba-tiba terblokir saat APK dengan Device
+                                        Binding disebar. Setelah jendela ini berakhir
+                                        (atau dimatikan), perangkat baru selalu
+                                        menunggu persetujuan di halaman Kelola
+                                        Perangkat.
+                                    </p>
+
+                                    <div
+                                        className={
+                                            'mt-4 rounded-md p-3 text-sm ' +
+                                            (deviceBindingGracePeriodActive
+                                                ? 'bg-green-50 text-green-800 ring-1 ring-green-200'
+                                                : 'bg-gray-100 text-gray-600 ring-1 ring-gray-300')
+                                        }
+                                    >
+                                        {deviceBindingGracePeriodActive
+                                            ? `Aktif sampai ${formatDateTime(deviceBindingGracePeriodEndsAt)} WIB.`
+                                            : 'Tidak aktif — perangkat baru selalu menunggu persetujuan admin.'}
+                                    </div>
+
+                                    <form
+                                        onSubmit={submitGracePeriodExtend}
+                                        className="mt-4 flex flex-wrap items-end gap-3"
+                                    >
+                                        <div>
+                                            <InputLabel
+                                                htmlFor="grace_days"
+                                                value="Perpanjang dari sekarang (hari)"
+                                            />
+                                            <TextInput
+                                                id="grace_days"
+                                                type="number"
+                                                min="1"
+                                                max="365"
+                                                className="mt-1 h-10 block w-32"
+                                                value={graceDays}
+                                                onChange={(e) => setGraceDays(e.target.value)}
+                                            />
+                                            <InputError
+                                                className="mt-2"
+                                                message={gracePeriodErrors.days}
+                                            />
+                                        </div>
+                                        <PrimaryButton
+                                            type="submit"
+                                            className="h-10"
+                                            disabled={savingGracePeriod}
+                                        >
+                                            Perpanjang
+                                        </PrimaryButton>
+                                        <SecondaryButton
+                                            type="button"
+                                            className="h-10"
+                                            disabled={savingGracePeriod || !deviceBindingGracePeriodActive}
+                                            onClick={submitGracePeriodDisable}
+                                        >
+                                            Matikan Sekarang
                                         </SecondaryButton>
-                                    </Link>
+                                    </form>
+
+                                    {gracePeriodLogs.length > 0 && (
+                                        <div className="mt-4 border-t border-gray-100 pt-4">
+                                            <h4 className="mb-2 text-sm font-semibold text-gray-900">
+                                                Riwayat Perubahan
+                                            </h4>
+                                            <ul className="space-y-2">
+                                                {gracePeriodLogs.map((log, index) => (
+                                                    <li
+                                                        key={index}
+                                                        className="flex items-center justify-between border-b border-gray-100 py-2 text-sm last:border-b-0"
+                                                    >
+                                                        <span className="text-gray-700">
+                                                            {log.device_binding_grace_period_ends_at
+                                                                ? `Diatur sampai ${formatDateTime(log.device_binding_grace_period_ends_at)}`
+                                                                : 'Dimatikan'}{' '}
+                                                            oleh{' '}
+                                                            <span className="font-medium">
+                                                                {log.changed_by}
+                                                            </span>
+                                                        </span>
+                                                        <span className="text-gray-400">
+                                                            {formatDateTime(log.created_at)}
+                                                        </span>
+                                                    </li>
+                                                ))}
+                                            </ul>
+                                        </div>
+                                    )}
                                 </div>
-                            )}
-                        </div>
-                    </section>
-
-                    <hr className="border-gray-200" />
-
-                    <section>
-                        <h3 className="mb-3 text-base font-semibold text-gray-900">
-                            Device Binding — Grace Period
-                        </h3>
-                        <div className="rounded-lg bg-white p-6 shadow-sm ring-1 ring-gray-200">
-                            <p className="text-sm text-gray-600">
-                                Selama jendela ini aktif, perangkat mobile
-                                BARU (belum pernah tercatat) otomatis
-                                disetujui saat login pertama — tidak perlu
-                                persetujuan admin manual. Dipakai supaya HP/
-                                tablet yang sudah dipakai sekarang tidak
-                                tiba-tiba terblokir saat APK dengan Device
-                                Binding disebar. Setelah jendela ini berakhir
-                                (atau dimatikan), perangkat baru selalu
-                                menunggu persetujuan di halaman Kelola
-                                Perangkat.
-                            </p>
-
-                            <div
-                                className={
-                                    'mt-4 rounded-md p-3 text-sm ' +
-                                    (deviceBindingGracePeriodActive
-                                        ? 'bg-green-50 text-green-800 ring-1 ring-green-200'
-                                        : 'bg-gray-100 text-gray-600 ring-1 ring-gray-300')
-                                }
-                            >
-                                {deviceBindingGracePeriodActive
-                                    ? `Aktif sampai ${formatDateTime(deviceBindingGracePeriodEndsAt)} WIB.`
-                                    : 'Tidak aktif — perangkat baru selalu menunggu persetujuan admin.'}
-                            </div>
-
-                            <form
-                                onSubmit={submitGracePeriodExtend}
-                                className="mt-4 flex flex-wrap items-end gap-3"
-                            >
-                                <div>
-                                    <InputLabel
-                                        htmlFor="grace_days"
-                                        value="Perpanjang dari sekarang (hari)"
-                                    />
-                                    <TextInput
-                                        id="grace_days"
-                                        type="number"
-                                        min="1"
-                                        max="365"
-                                        className="mt-1 h-10 block w-32"
-                                        value={graceDays}
-                                        onChange={(e) => setGraceDays(e.target.value)}
-                                    />
-                                    <InputError
-                                        className="mt-2"
-                                        message={gracePeriodErrors.days}
-                                    />
-                                </div>
-                                <PrimaryButton
-                                    type="submit"
-                                    className="h-10"
-                                    disabled={savingGracePeriod}
-                                >
-                                    Perpanjang
-                                </PrimaryButton>
-                                <SecondaryButton
-                                    type="button"
-                                    className="h-10"
-                                    disabled={savingGracePeriod || !deviceBindingGracePeriodActive}
-                                    onClick={submitGracePeriodDisable}
-                                >
-                                    Matikan Sekarang
-                                </SecondaryButton>
-                            </form>
-                        </div>
-                    </section>
+                            </section>
+                        </>
+                    )}
                 </div>
             </div>
 

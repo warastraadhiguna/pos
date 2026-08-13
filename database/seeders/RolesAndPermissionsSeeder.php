@@ -36,21 +36,37 @@ class RolesAndPermissionsSeeder extends Seeder
             ['key' => 'pengguna.manage', 'label' => 'Kelola Pengguna', 'group' => 'Pengaturan'],
             ['key' => 'roles.manage', 'label' => 'Kelola Role & Izin', 'group' => 'Pengaturan'],
             ['key' => 'company-settings.manage', 'label' => 'Pengaturan Pajak (PPN)', 'group' => 'Pengaturan'],
-            ['key' => 'devices.manage', 'label' => 'Kelola Perangkat', 'group' => 'Pengaturan'],
+            // Role Developer (hidden super-admin) -- developer-only sejak
+            // awal di instalasi fresh, TIDAK PERNAH di-attach ke
+            // Admin/Manajer/Kasir di bawah. Lihat rancangan yang disetujui
+            // & migrasi `..._400200_.../..._400300_...` yang menangani
+            // transisi aman untuk database YANG SUDAH ADA sebelum fitur ini.
+            ['key' => 'devices.manage', 'label' => 'Kelola Perangkat', 'group' => 'Pengaturan', 'is_developer_only' => true],
             ['key' => 'branches.manage', 'label' => 'Kelola Cabang', 'group' => 'Pengaturan'],
+            ['key' => 'system.manage', 'label' => 'Pengaturan Sistem (Developer)', 'group' => 'Pengaturan', 'is_developer_only' => true],
         ])->mapWithKeys(fn (array $permission) => [$permission['key'] => Permission::create($permission)]);
 
         $admin = Role::create(['name' => 'Admin']);
-        $admin->permissions()->attach($permissions->pluck('id'));
+        $admin->permissions()->attach(
+            $permissions->except(['devices.manage', 'system.manage'])->pluck('id'),
+        );
 
         $manajer = Role::create(['name' => 'Manajer']);
         $manajer->permissions()->attach(
-            $permissions->except(['pengguna.manage', 'roles.manage', 'company-settings.manage', 'modal.manage', 'coa.manage', 'devices.manage', 'branches.manage'])->pluck('id'),
+            $permissions->except(['pengguna.manage', 'roles.manage', 'company-settings.manage', 'modal.manage', 'coa.manage', 'devices.manage', 'branches.manage', 'system.manage'])->pluck('id'),
         );
 
         $kasir = Role::create(['name' => 'Kasir']);
         $kasir->permissions()->attach(
             $permissions->only(['kasir.access', 'penjualan.view'])->pluck('id'),
         );
+
+        // Role Developer -- SENGAJA tidak diberikan permission apa pun di
+        // sini. User::hasPermission()/permissionKeys() bypass semuanya
+        // lewat flag is_developer, jadi pivot kosong sudah cukup (dan
+        // menghindari drift kalau daftar permission di atas berubah).
+        // Akun sungguhan HANYA dibuat lewat `php artisan developer:create`
+        // -- tidak pernah diseed di sini, sama seperti Admin.
+        Role::create(['name' => 'Developer', 'is_developer' => true]);
     }
 }

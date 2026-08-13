@@ -22,7 +22,7 @@ class SettingController extends Controller
 {
     public function __construct(private readonly CashAccountService $cashAccounts) {}
 
-    public function index(): Response
+    public function index(Request $request): Response
     {
         $setting = CompanySetting::current();
 
@@ -31,12 +31,23 @@ class SettingController extends Controller
             ->limit(20)
             ->get()
             ->map(fn (CompanySettingLog $log) => [
+                // Baris lama (sebelum kolom setting_key ada) selalu berarti
+                // 'ppn_active' -- satu-satunya setting yang pernah dicatat
+                // saat itu, lihat docblock CompanySettingLog.
+                'setting_key' => $log->setting_key ?? 'ppn_active',
                 'ppn_active' => $log->ppn_active,
+                'multi_branch_enabled' => $log->multi_branch_enabled,
+                'device_binding_grace_period_ends_at' => $log->device_binding_grace_period_ends_at?->toIso8601String(),
                 'changed_by' => $log->changedBy?->name ?? 'Pengguna terhapus',
                 'created_at' => $log->created_at->toIso8601String(),
             ]);
 
         return Inertia::render('Settings/Index', [
+            // Role Developer (hidden super-admin) -- gerbang bagian Multi-
+            // Cabang & grace period Device Binding di halaman ini, lihat
+            // rancangan yang disetujui & routes/web.php (permission:system.manage
+            // pada 2 route yang jadi milik dua bagian ini).
+            'canManageSystem' => $request->user()->hasPermission('system.manage'),
             'ppnActive' => $setting->ppn_active,
             'productDisplayMode' => $setting->product_display_mode,
             'storeName' => $setting->store_name,
@@ -94,6 +105,7 @@ class SettingController extends Controller
         $setting->update(['ppn_active' => $data['ppn_active']]);
 
         CompanySettingLog::create([
+            'setting_key' => 'ppn_active',
             'ppn_active' => $data['ppn_active'],
             'changed_by_user_id' => $request->user()->id,
         ]);
@@ -423,9 +435,10 @@ class SettingController extends Controller
      * admin bisa memperpanjang (dari SEKARANG + N hari, bukan menambah ke
      * tanggal lama -- lebih intuitif saat rollout APK ternyata lambat),
      * mempersingkat/menetapkan tanggal pasti, atau mematikannya sama sekali
-     * (device baru sesudahnya selalu masuk pending). Sengaja TIDAK dicatat
-     * ke company_setting_logs (bukan keputusan berstatus hukum seperti
-     * PPN), pola sama toggle fitur lain di file ini.
+     * (device baru sesudahnya selalu masuk pending). Sejak role Developer
+     * (hidden super-admin) ada, action ini naik jadi tindakan berakses-
+     * tinggi (permission:system.manage di routes/web.php) -- SEKARANG
+     * dicatat ke company_setting_logs, beda dari sebelumnya.
      */
     public function updateDeviceBindingGracePeriod(Request $request): RedirectResponse
     {
@@ -443,6 +456,12 @@ class SettingController extends Controller
 
         CompanySetting::current()->update(['device_binding_grace_period_ends_at' => $endsAt]);
 
+        CompanySettingLog::create([
+            'setting_key' => 'device_binding_grace_period',
+            'device_binding_grace_period_ends_at' => $endsAt,
+            'changed_by_user_id' => $request->user()->id,
+        ]);
+
         return Redirect::route('pengaturan.index')->with(
             'success',
             $endsAt
@@ -455,15 +474,31 @@ class SettingController extends Controller
      * Saklar global Multi-Cabang Lapisan 1 (lihat rancangan yang
      * disetujui, poin 6). OFF (default) -- menu "Cabang" & field pemilih
      * cabang (Kelola Perangkat, Kelola Pengguna) tersembunyi sama sekali,
-     * perilaku identik toko satu lokasi sebelum fitur ini ada. Sengaja
-     * TIDAK dicatat ke company_setting_logs, pola sama toggle fitur lain
-     * di file ini.
+     * perilaku identik toko satu lokasi sebelum fitur ini ada. Sejak role
+     * Developer (hidden super-admin) ada, action ini naik jadi tindakan
+     * berakses-tinggi (permission:system.manage di routes/web.php) --
+     * SEKARANG dicatat ke company_setting_logs, beda dari sebelumnya.
      */
     public function updateMultiBranchEnabled(Request $request): RedirectResponse
     {
         $data = $request->validate(['multi_branch_enabled' => ['required', 'boolean']]);
 
-        CompanySetting::current()->update(['multi_branch_enabled' => $data['multi_branch_enabled']]);
+        $setting = CompanySetting::current();
+
+        if ($setting->multi_branch_enabled === $data['multi_branch_enabled']) {
+            return Redirect::route('pengaturan.index')->with(
+                'success',
+                'Tidak ada perubahan — status Multi-Cabang memang sudah begitu.',
+            );
+        }
+
+        $setting->update(['multi_branch_enabled' => $data['multi_branch_enabled']]);
+
+        CompanySettingLog::create([
+            'setting_key' => 'multi_branch_enabled',
+            'multi_branch_enabled' => $data['multi_branch_enabled'],
+            'changed_by_user_id' => $request->user()->id,
+        ]);
 
         return Redirect::route('pengaturan.index')->with(
             'success',

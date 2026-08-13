@@ -55,13 +55,40 @@ class User extends Authenticatable
         return $this->belongsTo(Outlet::class);
     }
 
+    /**
+     * Role Developer (hidden super-admin, lihat rancangan yang disetujui)
+     * BYPASS setiap cek permission tanpa syarat -- superset Admin dijamin
+     * secara KODE, bukan dengan menyalin baris pivot permission Admin ke
+     * role Developer. Kalau disalin statis, permission bisnis baru yang
+     * di-attach ke Admin lewat migrasi nanti (pola yang sudah dipakai,
+     * mis. `..._seed_branches_manage_permission.php`) tidak otomatis ikut
+     * ke Developer kecuali migrasi itu diingat untuk menyentuh dua role --
+     * gampang basi diam-diam. Bypass di sini membuat "superset" berlaku
+     * SELALU, tanpa perlu baris pivot permission sama sekali untuk role
+     * Developer (boleh kosong).
+     */
     public function hasPermission(string $key): bool
     {
+        if ($this->role?->is_developer) {
+            return true;
+        }
+
         return $this->role?->permissions->contains('key', $key) ?? false;
     }
 
+    /**
+     * Dipakai HandleInertiaRequests untuk membagikan daftar permission ke
+     * frontend (nav item digerbangi dengan mencocokkan ke array ini) --
+     * HARUS ikut bypass sepasang dengan hasPermission() di atas, kalau
+     * tidak sidebar Developer akan kosong (backend mengizinkan akses tapi
+     * frontend tidak pernah menampilkan link-nya) walau backend sudah benar.
+     */
     public function permissionKeys(): array
     {
+        if ($this->role?->is_developer) {
+            return Permission::pluck('key')->all();
+        }
+
         return $this->role?->permissions->pluck('key')->all() ?? [];
     }
 }

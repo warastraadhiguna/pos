@@ -124,9 +124,13 @@ class MultiBranchTest extends TestCase
 
     // ==================== TOGGLE ON/OFF ====================
 
-    public function test_admin_can_toggle_multi_branch_enabled(): void
+    // Sejak role Developer (hidden super-admin) ada, saklar global ini
+    // pengaturan KERANGKA sistem, digerbangi system.manage (developer-
+    // only), BUKAN lagi company-settings.manage biasa -- lihat rancangan
+    // yang disetujui & routes/web.php.
+    public function test_a_user_with_system_manage_can_toggle_multi_branch_enabled(): void
     {
-        $admin = User::factory()->create(['role_id' => $this->roleWith(['company-settings.manage'])->id]);
+        $admin = User::factory()->create(['role_id' => $this->roleWith(['system.manage'])->id]);
 
         $this->actingAs($admin)->put(route('pengaturan.multi-branch.update'), [
             'multi_branch_enabled' => true,
