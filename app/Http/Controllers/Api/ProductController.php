@@ -8,6 +8,7 @@ use App\Http\Resources\ProductStockResource;
 use App\Models\CompanySetting;
 use App\Models\Product;
 use App\Models\Warehouse;
+use App\Services\BranchService;
 use App\Services\InventoryService;
 use App\Support\SyncWatermark;
 use Illuminate\Http\Request;
@@ -15,7 +16,10 @@ use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 
 class ProductController extends Controller
 {
-    public function __construct(private readonly InventoryService $inventory) {}
+    public function __construct(
+        private readonly InventoryService $inventory,
+        private readonly BranchService $branches,
+    ) {}
 
     /**
      * Product catalog for the mobile client to cache offline — including
@@ -49,6 +53,18 @@ class ProductController extends Controller
      * endpoint terpisah. BEDA dari stok itu sendiri (lihat stock() di
      * bawah) yang berubah setiap transaksi dan sengaja endpoint TERPISAH
      * non-incremental.
+     *
+     * Identitas per-cabang (lihat rancangan yang disetujui, Multi-Cabang) --
+     * `store_name`/`store_address`/`store_phone`/`receipt_footer` di sini
+     * BUKAN lagi `company_settings` mentah, melainkan identitas cabang
+     * TEMPAT DEVICE INI berada (`resolveCurrentOutlet()`, sama seperti
+     * penjualan/stok), sudah termasuk fallback ke identitas pusat/global
+     * kalau cabang belum diisi (BranchService::resolveReceiptIdentity()).
+     * Mobile TIDAK PERLU tahu ada resolusi cabang sama sekali — field yang
+     * diterima sudah final, disimpan lokal (`StoreIdentity`) lewat pipa
+     * sync yang SUDAH ADA, dipakai `ReceiptFormatter` untuk cetak struk
+     * OFFLINE dengan identitas cabang device ini, persis seperti
+     * PPN/product_display_mode/dst sudah bekerja.
      *
      * `meta.member_enabled` adalah saklar fitur Member/Pelanggan — mobile
      * client HARUS memeriksa ini sebelum menarik data member (lihat
@@ -105,15 +121,19 @@ class ProductController extends Controller
 
         $setting = CompanySetting::current();
 
+        $deviceId = $request->user()->currentAccessToken()?->device_id;
+        $outlet = $this->branches->resolveCurrentOutlet($request->user(), $deviceId);
+        $identity = $this->branches->resolveReceiptIdentity($outlet);
+
         return ProductResource::collection($products)
             ->additional(['meta' => [
                 'synced_at' => $syncedAt->toIso8601String(),
                 'ppn_active' => $setting->ppn_active,
                 'product_display_mode' => $setting->product_display_mode,
-                'store_name' => $setting->store_name,
-                'store_address' => $setting->store_address,
-                'store_phone' => $setting->store_phone,
-                'receipt_footer' => $setting->receipt_footer,
+                'store_name' => $identity['name'],
+                'store_address' => $identity['address'],
+                'store_phone' => $identity['phone'],
+                'receipt_footer' => $identity['receipt_footer'],
                 'show_stock_on_button' => $setting->show_stock_on_button,
                 'show_product_image' => $setting->show_product_image,
                 'payment_quick_amounts' => $setting->payment_quick_amounts,

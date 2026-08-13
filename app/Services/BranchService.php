@@ -142,4 +142,50 @@ class BranchService
     {
         return Outlet::where('is_headquarters', true)->firstOrFail();
     }
+
+    /**
+     * Identitas struk (header) untuk `$outlet` -- lihat rancangan Identitas
+     * per-cabang yang disetujui. Dipakai baik oleh struk web
+     * (`SaleHistoryController::receipt()`, resolve dari `$sale->outlet`)
+     * maupun sync mobile (`Api\ProductController::index()`, resolve dari
+     * outlet device saat ini) -- SATU tempat, supaya kedua kanal tidak
+     * bisa menyimpang.
+     *
+     * Cabang Pusat (`is_headquarters`) SELALU pakai `company_settings`
+     * global, TIDAK PERNAH kolom identitasnya sendiri walau terisi --
+     * jaminan kompatibilitas: sebelum fitur ini ada, SATU-SATUNYA
+     * identitas yang pernah dipakai adalah `company_settings` (diedit
+     * lewat Pengaturan > Identitas Toko), dan toko satu-lokasi/`
+     * multi_branch_enabled=false` SELALU resolve ke pusat
+     * (`resolveCurrentOutlet()`) -- kalau pusat ikut fallback per-field
+     * biasa, `outlet.name` ("Outlet Pusat", SELALU terisi sejak dibuat)
+     * akan menggantikan `store_name` secara diam-diam, pecah kompatibilitas.
+     *
+     * Cabang lain: per-field, nilai cabang sendiri kalau terisi, else
+     * global -- cabang baru yang belum sempat diisi otomatis dapat
+     * identitas pusat/global, tidak pernah struk tanpa identitas sama
+     * sekali.
+     *
+     * @return array{name: ?string, address: ?string, phone: ?string, receipt_footer: ?string}
+     */
+    public function resolveReceiptIdentity(Outlet $outlet): array
+    {
+        $global = CompanySetting::current();
+
+        if ($outlet->is_headquarters) {
+            return [
+                'name' => $global->store_name,
+                'address' => $global->store_address,
+                'phone' => $global->store_phone,
+                'receipt_footer' => $global->receipt_footer,
+            ];
+        }
+
+        return [
+            'name' => $outlet->name ?: $global->store_name,
+            'address' => $outlet->address ?: $global->store_address,
+            'phone' => $outlet->phone ?: $global->store_phone,
+            'receipt_footer' => $outlet->receipt_footer ?: $global->receipt_footer,
+        ];
+    }
 }

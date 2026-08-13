@@ -3,15 +3,17 @@
 namespace App\Http\Controllers\Kasir;
 
 use App\Http\Controllers\Controller;
-use App\Models\CompanySetting;
 use App\Models\Sale;
 use App\Models\User;
+use App\Services\BranchService;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
 
 class SaleHistoryController extends Controller
 {
+    public function __construct(private readonly BranchService $branches) {}
+
     /**
      * Search box covers nomor transaksi (ID) + nama produk di dalamnya --
      * dua hal yang secara alami dicari lewat teks bebas (tidak ada daftar
@@ -124,23 +126,32 @@ class SaleHistoryController extends Controller
      * identik dengan yang pertama kali keluar, walau pengaturan toko
      * (nama, alamat, footer, saklar PPN) berubah setelahnya untuk BAGIAN
      * transaksi (subtotal/pajak/total/uang diterima/kembalian) -- catatan:
-     * identitas toko (nama/alamat/telp/footer) sendiri TIDAK di-snapshot
-     * per transaksi (tidak ada kolom untuk itu di `sales`), jadi baris itu
-     * mengikuti pengaturan TERKINI, sama seperti mobile (`StoreIdentity`
-     * di sana juga dibaca dari `app_settings` saat cetak, bukan snapshot
-     * per-transaksi).
+     * identitas toko sendiri TIDAK di-snapshot per transaksi (tidak ada
+     * kolom untuk itu di `sales`), jadi baris itu mengikuti pengaturan
+     * TERKINI, sama seperti mobile.
+     *
+     * Identitas per-cabang (lihat rancangan yang disetujui) -- resolve
+     * dari `$sale->outlet` (cabang TEMPAT TRANSAKSI, ter-tag saat sale
+     * dibuat lewat resolveCurrentOutlet(), Multi-Cabang Lapisan 3), BUKAN
+     * cabang device/sesi yang sedang mencetak/reprint sekarang -- admin di
+     * pusat yang reprint struk cabang lain tetap harus melihat identitas
+     * cabang ASAL transaksi. `sales.outlet_id` NOT NULL sejak awal (data
+     * lama di-backfill ke headquarters, Lapisan 1) jadi `$sale->outlet`
+     * tidak pernah null, dan headquarters selalu resolve ke identitas
+     * global -- struk lama & toko satu-lokasi identik seperti sebelum
+     * fitur ini ada, otomatis (lihat BranchService::resolveReceiptIdentity()).
      */
     public function receipt(Sale $sale): Response
     {
-        $setting = CompanySetting::current();
+        $identity = $this->branches->resolveReceiptIdentity($sale->outlet);
 
         return Inertia::render('Penjualan/Receipt', [
             'sale' => $sale->load(['lines.product', 'lines.variations', 'createdByUser']),
             'store' => [
-                'name' => $setting->store_name,
-                'address' => $setting->store_address,
-                'phone' => $setting->store_phone,
-                'footer' => $setting->receipt_footer,
+                'name' => $identity['name'],
+                'address' => $identity['address'],
+                'phone' => $identity['phone'],
+                'footer' => $identity['receipt_footer'],
             ],
         ]);
     }

@@ -6,7 +6,7 @@ use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
-#[Fillable(['name', 'code', 'address', 'is_active', 'is_headquarters'])]
+#[Fillable(['name', 'code', 'address', 'phone', 'receipt_footer', 'is_active', 'is_headquarters'])]
 class Outlet extends Model
 {
     protected function casts(): array

@@ -80,6 +80,14 @@ class OutletController extends Controller
             'name' => ['required', 'string', 'max:255'],
             'code' => ['nullable', 'string', 'max:20', Rule::unique('outlets', 'code')->ignore($outlet?->id)],
             'address' => ['nullable', 'string', 'max:255'],
+            // Identitas struk (header) -- lihat rancangan yang disetujui.
+            // Nullable & boleh dikosongkan kapan saja (mis. balik ke
+            // "belum diisi") -- BranchService::resolveReceiptIdentity()
+            // jatuh ke identitas company_settings global kalau kosong,
+            // jadi mengosongkan field ini TIDAK PERNAH membuat struk
+            // tanpa identitas.
+            'phone' => ['nullable', 'string', 'max:255'],
+            'receipt_footer' => ['nullable', 'string', 'max:255'],
             'is_active' => ['boolean'],
             'is_headquarters' => ['boolean'],
         ]);

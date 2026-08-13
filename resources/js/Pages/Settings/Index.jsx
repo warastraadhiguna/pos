@@ -588,6 +588,14 @@ export default function Index({
                                 Dicetak di bagian atas struk (kasir web &
                                 aplikasi mobile). Boleh dikosongkan.
                             </p>
+                            {multiBranchEnabled && (
+                                <p className="mt-2 text-sm text-gray-600">
+                                    Ini identitas Cabang Pusat, JUGA jadi
+                                    identitas default untuk cabang lain yang
+                                    belum mengisi identitasnya sendiri (Kelola
+                                    Cabang &gt; Identitas Struk).
+                                </p>
+                            )}
 
                             <form onSubmit={submitStoreIdentity} className="mt-4 space-y-4">
                                 <div>

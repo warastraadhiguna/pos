@@ -19,6 +19,8 @@ export default function Form({ outlet }) {
         name: outlet?.name ?? '',
         code: outlet?.code ?? '',
         address: outlet?.address ?? '',
+        phone: outlet?.phone ?? '',
+        receipt_footer: outlet?.receipt_footer ?? '',
         is_active: outlet?.is_active ?? true,
         is_headquarters: outlet?.is_headquarters ?? false,
     });
@@ -119,6 +121,72 @@ export default function Form({ outlet }) {
                                     className="mt-2"
                                     message={errors.address}
                                 />
+                            </div>
+
+                            <div className="space-y-4 rounded-md border border-gray-200 p-4">
+                                <div>
+                                    <h3 className="text-sm font-semibold text-gray-900">
+                                        Identitas Struk
+                                    </h3>
+                                    <p className="mt-1 text-xs text-gray-500">
+                                        {isCurrentHeadquarters ? (
+                                            <>
+                                                Cabang pusat SELALU pakai Identitas
+                                                Toko dari halaman Pengaturan — field
+                                                di bawah ini tidak dipakai untuk
+                                                struk cabang pusat.
+                                            </>
+                                        ) : (
+                                            <>
+                                                Ditampilkan di header struk transaksi
+                                                cabang ini (nama pakai "Nama
+                                                Cabang"/alamat pakai "Alamat" di
+                                                atas). Kosongkan field mana pun
+                                                untuk memakai Identitas Toko
+                                                (Pengaturan) sebagai gantinya —
+                                                cabang baru yang belum diisi tetap
+                                                mencetak struk dengan identitas
+                                                pusat, tidak pernah kosong.
+                                            </>
+                                        )}
+                                    </p>
+                                </div>
+
+                                <div>
+                                    <InputLabel htmlFor="phone" value="Telepon" />
+                                    <TextInput
+                                        id="phone"
+                                        className="mt-1 block w-full"
+                                        value={data.phone}
+                                        onChange={(e) =>
+                                            setData('phone', e.target.value)
+                                        }
+                                    />
+                                    <InputError
+                                        className="mt-2"
+                                        message={errors.phone}
+                                    />
+                                </div>
+
+                                <div>
+                                    <InputLabel
+                                        htmlFor="receipt_footer"
+                                        value="Footer Struk"
+                                    />
+                                    <textarea
+                                        id="receipt_footer"
+                                        rows={2}
+                                        className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary focus:ring-primary"
+                                        value={data.receipt_footer}
+                                        onChange={(e) =>
+                                            setData('receipt_footer', e.target.value)
+                                        }
+                                    />
+                                    <InputError
+                                        className="mt-2"
+                                        message={errors.receipt_footer}
+                                    />
+                                </div>
                             </div>
 
                             <div className="flex items-center gap-2">

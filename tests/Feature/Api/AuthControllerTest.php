@@ -3,6 +3,7 @@
 namespace Tests\Feature\Api;
 
 use App\Models\CompanySetting;
+use App\Models\Outlet;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Auth;
@@ -77,8 +78,13 @@ class AuthControllerTest extends TestCase
     {
         // GET /api/v1/products reads the company_settings singleton (PPN
         // switch) into its response meta — needs a row to exist, same as
-        // it always would in a real, seeded database.
+        // it always would in a real, seeded database. Identitas per-cabang
+        // (Multi-Cabang) juga resolve outlet pusat lewat
+        // BranchService::resolveCurrentOutlet() sekarang -- butuh MINIMAL
+        // satu outlet headquarters ada, sama seperti database sungguhan
+        // (FoundationSeeder selalu membuatnya).
         CompanySetting::create(['ppn_active' => true]);
+        Outlet::create(['name' => 'Outlet Pusat', 'is_active' => true, 'is_headquarters' => true]);
 
         $user = User::factory()->create(['password' => bcrypt('secret1234')]);
 
