@@ -227,9 +227,13 @@ class SettingControllerTest extends TestCase
         $this->assertFalse(CompanySetting::current()->table_enabled);
     }
 
-    public function test_admin_can_turn_on_table_enabled_without_creating_a_log_entry(): void
+    // Toggle Meja adalah pengaturan KERANGKA sistem (Role Developer, hidden
+    // super-admin) -- digerbangi system.manage (developer-only), BUKAN lagi
+    // company-settings.manage biasa. Lihat rancangan yang disetujui &
+    // routes/web.php.
+    public function test_a_user_with_system_manage_can_turn_on_table_enabled_without_creating_a_log_entry(): void
     {
-        $admin = User::factory()->create(['role_id' => $this->roleWith(['company-settings.manage'])->id]);
+        $admin = User::factory()->create(['role_id' => $this->roleWith(['system.manage'])->id]);
 
         $response = $this->actingAs($admin)->put('/pengaturan/meja', [
             'table_enabled' => true,
@@ -257,9 +261,11 @@ class SettingControllerTest extends TestCase
         $this->assertFalse(CompanySetting::current()->note_enabled);
     }
 
-    public function test_admin_can_turn_on_note_enabled_without_creating_a_log_entry(): void
+    // Toggle Catatan -- pola sama Meja di atas, digerbangi system.manage
+    // (developer-only) sejak Role Developer ada.
+    public function test_a_user_with_system_manage_can_turn_on_note_enabled_without_creating_a_log_entry(): void
     {
-        $admin = User::factory()->create(['role_id' => $this->roleWith(['company-settings.manage'])->id]);
+        $admin = User::factory()->create(['role_id' => $this->roleWith(['system.manage'])->id]);
 
         $response = $this->actingAs($admin)->put('/pengaturan/catatan', [
             'note_enabled' => true,
@@ -287,9 +293,11 @@ class SettingControllerTest extends TestCase
         $this->assertFalse(CompanySetting::current()->variation_enabled);
     }
 
-    public function test_admin_can_turn_on_variation_enabled_without_creating_a_log_entry(): void
+    // Toggle Variasi -- pola sama Meja di atas, digerbangi system.manage
+    // (developer-only) sejak Role Developer ada.
+    public function test_a_user_with_system_manage_can_turn_on_variation_enabled_without_creating_a_log_entry(): void
     {
-        $admin = User::factory()->create(['role_id' => $this->roleWith(['company-settings.manage'])->id]);
+        $admin = User::factory()->create(['role_id' => $this->roleWith(['system.manage'])->id]);
 
         $response = $this->actingAs($admin)->put('/pengaturan/variasi', [
             'variation_enabled' => true,
@@ -317,9 +325,11 @@ class SettingControllerTest extends TestCase
         $this->assertFalse(CompanySetting::current()->draft_enabled);
     }
 
-    public function test_admin_can_turn_on_draft_enabled_without_creating_a_log_entry(): void
+    // Toggle Draft -- pola sama Meja di atas, digerbangi system.manage
+    // (developer-only) sejak Role Developer ada.
+    public function test_a_user_with_system_manage_can_turn_on_draft_enabled_without_creating_a_log_entry(): void
     {
-        $admin = User::factory()->create(['role_id' => $this->roleWith(['company-settings.manage'])->id]);
+        $admin = User::factory()->create(['role_id' => $this->roleWith(['system.manage'])->id]);
 
         $response = $this->actingAs($admin)->put('/pengaturan/draft', [
             'draft_enabled' => true,

@@ -94,23 +94,35 @@ Route::middleware(['auth', 'verified', 'permission:company-settings.manage'])->p
     Route::put('/nominal-bayar', [SettingController::class, 'updatePaymentQuickAmounts'])->name('nominal-bayar.update');
     Route::put('/cetak-struk-mobile', [SettingController::class, 'updateMobilePrintReceipt'])->name('cetak-struk-mobile.update');
     Route::put('/member', [SettingController::class, 'updateMemberEnabled'])->name('member.update');
+    Route::put('/qris', [SettingController::class, 'updateQris'])->name('qris.update');
+});
+
+// Role Developer (hidden super-admin) -- toggle ON/OFF fitur (Multi-Cabang,
+// grace period Device Binding, Meja, Catatan, Variasi, Draft) adalah
+// pengaturan KERANGKA sistem -- developer yang MENGONFIGURASI kapabilitas
+// apa yang tersedia, admin yang MENJALANKAN bisnis dengan fitur yang
+// diberikan (lihat rancangan yang disetujui). Digerbangi permission
+// TERPISAH dari `company-settings.manage` di atas walau berbagi prefix
+// URL/halaman yang sama (pola sama `devices.manage` di bawah, prefix
+// `pengaturan/*` beda grup middleware). PENTING -- ini CUMA saklar ON/OFF:
+// kelola ISI fitur (Kelola Meja/Template Catatan/Produk & Variasi) TETAP
+// `master-data.manage` (admin), route TERPISAH SAMA SEKALI (lihat grup
+// `master.*` di bawah) -- admin tetap penuh mengelola data, developer cuma
+// yang bisa mematikan/menyalakan fiturnya. Admin existing kehilangan akses
+// ke 4 toggle baru ini (persis seperti Multi-Cabang/grace period
+// sebelumnya) -- TAPI TIDAK butuh migrasi transisi baru: `system.manage`
+// sendiri (siapa yang boleh memegangnya) sudah settled sejak migrasi
+// `..._400200_.../..._400300_...`, cuma route mana yang digerbangi
+// permission itu yang bertambah -- akun Developer yang sudah ada otomatis
+// bisa akses 4 toggle ini juga lewat bypass (lihat User::hasPermission()),
+// tidak ada jendela "belum ada yang bisa akses" yang baru terbuka.
+Route::middleware(['auth', 'verified', 'permission:system.manage'])->prefix('pengaturan')->name('pengaturan.')->group(function () {
+    Route::put('/device-binding-grace-period', [SettingController::class, 'updateDeviceBindingGracePeriod'])->name('device-binding-grace-period.update');
+    Route::put('/multi-cabang', [SettingController::class, 'updateMultiBranchEnabled'])->name('multi-branch.update');
     Route::put('/meja', [SettingController::class, 'updateTableEnabled'])->name('meja.update');
     Route::put('/catatan', [SettingController::class, 'updateNoteEnabled'])->name('catatan.update');
     Route::put('/variasi', [SettingController::class, 'updateVariationEnabled'])->name('variasi.update');
     Route::put('/draft', [SettingController::class, 'updateDraftEnabled'])->name('draft.update');
-    Route::put('/qris', [SettingController::class, 'updateQris'])->name('qris.update');
-});
-
-// Role Developer (hidden super-admin) -- toggle Multi-Cabang & grace period
-// Device Binding adalah pengaturan KERANGKA sistem, bukan operasi bisnis
-// (lihat rancangan yang disetujui), jadi digerbangi permission TERPISAH
-// dari `company-settings.manage` di atas walau berbagi prefix URL/halaman
-// yang sama (pola sama `devices.manage` di bawah, prefix `pengaturan/*`
-// berbeda grup middleware). Admin existing kehilangan akses ini -- lihat
-// migrasi `..._400200_.../..._400300_...` untuk transisi amannya.
-Route::middleware(['auth', 'verified', 'permission:system.manage'])->prefix('pengaturan')->name('pengaturan.')->group(function () {
-    Route::put('/device-binding-grace-period', [SettingController::class, 'updateDeviceBindingGracePeriod'])->name('device-binding-grace-period.update');
-    Route::put('/multi-cabang', [SettingController::class, 'updateMultiBranchEnabled'])->name('multi-branch.update');
 });
 
 // Device Binding -- halaman TERSEMBUNYI (URL disengaja tidak dicantumkan di

@@ -259,6 +259,42 @@ class DeveloperRoleTest extends TestCase
         $this->actingAs($admin)->get(route('laporan.neraca'))->assertOk();
     }
 
+    /**
+     * Penyempurnaan lanjutan -- toggle ON/OFF Meja/Catatan/Variasi/Draft
+     * ikut pindah ke system.manage (developer-only), pola IDENTIK
+     * Multi-Cabang/grace period di atas. TAPI kelola ISI fitur (Kelola
+     * Meja/Template Catatan/Produk & Variasi) TETAP `master-data.manage`
+     * (admin) -- route/permission yang SAMA SEKALI TERPISAH, jadi harus
+     * tetap bisa diakses Admin walau 4 toggle di atas sudah 403.
+     */
+    public function test_the_four_feature_toggles_are_developer_only_while_their_data_management_pages_stay_admin(): void
+    {
+        $admin = $this->userWithRole('Admin');
+        $developer = $this->userWithRole('Developer');
+
+        $this->actingAs($admin)->put(route('pengaturan.meja.update'), ['table_enabled' => true])->assertForbidden();
+        $this->actingAs($admin)->put(route('pengaturan.catatan.update'), ['note_enabled' => true])->assertForbidden();
+        $this->actingAs($admin)->put(route('pengaturan.variasi.update'), ['variation_enabled' => true])->assertForbidden();
+        $this->actingAs($admin)->put(route('pengaturan.draft.update'), ['draft_enabled' => true])->assertForbidden();
+
+        $this->actingAs($developer)->put(route('pengaturan.meja.update'), ['table_enabled' => true])->assertRedirect(route('pengaturan.index'));
+        $this->actingAs($developer)->put(route('pengaturan.catatan.update'), ['note_enabled' => true])->assertRedirect(route('pengaturan.index'));
+        $this->actingAs($developer)->put(route('pengaturan.variasi.update'), ['variation_enabled' => true])->assertRedirect(route('pengaturan.index'));
+        $this->actingAs($developer)->put(route('pengaturan.draft.update'), ['draft_enabled' => true])->assertRedirect(route('pengaturan.index'));
+
+        $this->assertTrue(\App\Models\CompanySetting::current()->table_enabled);
+        $this->assertTrue(\App\Models\CompanySetting::current()->note_enabled);
+        $this->assertTrue(\App\Models\CompanySetting::current()->variation_enabled);
+        $this->assertTrue(\App\Models\CompanySetting::current()->draft_enabled);
+
+        // Kelola ISI fitur -- Admin (master-data.manage) TETAP penuh akses,
+        // terlepas dari 4 toggle di atas sudah developer-only.
+        $this->assertTrue($admin->hasPermission('master-data.manage'));
+        $this->actingAs($admin)->get(route('master.tables.index'))->assertOk();
+        $this->actingAs($admin)->get(route('master.note-templates.index'))->assertOk();
+        $this->actingAs($admin)->get(route('master.products.index'))->assertOk();
+    }
+
     // ==================== (g) Audit tetap utuh; 2 toggle sekarang tercatat ====================
 
     public function test_actions_performed_by_a_developer_are_attributed_normally_like_any_other_user(): void

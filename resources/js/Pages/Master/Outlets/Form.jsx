@@ -25,6 +25,16 @@ export default function Form({ outlet }) {
         is_headquarters: outlet?.is_headquarters ?? false,
     });
 
+    // Dipakai LIVE (bukan cuma isCurrentHeadquarters, yang cuma tahu status
+    // TERSIMPAN) -- BranchService::resolveReceiptIdentity() SELALU pakai
+    // Identitas Toko global untuk cabang pusat, jadi begitu checkbox "Cabang
+    // Pusat" dicentang (baik cabang yang MEMANG sudah pusat, atau cabang
+    // lain yang SEDANG dipromosikan jadi pusat), field telepon/footer di
+    // bawah langsung tidak berpengaruh apa pun -- UI harus mencerminkan itu
+    // seketika, bukan cuma setelah disimpan, supaya tidak ada jendela
+    // "field terlihat bisa diisi padahal sudah tidak dipakai".
+    const identityFollowsGlobalSettings = data.is_headquarters;
+
     const formRef = useRef(null);
 
     const submit = (e) => {
@@ -128,64 +138,75 @@ export default function Form({ outlet }) {
                                     <h3 className="text-sm font-semibold text-gray-900">
                                         Identitas Struk
                                     </h3>
-                                    <p className="mt-1 text-xs text-gray-500">
-                                        {isCurrentHeadquarters ? (
-                                            <>
-                                                Cabang pusat SELALU pakai Identitas
-                                                Toko dari halaman Pengaturan — field
-                                                di bawah ini tidak dipakai untuk
-                                                struk cabang pusat.
-                                            </>
-                                        ) : (
-                                            <>
-                                                Ditampilkan di header struk transaksi
-                                                cabang ini (nama pakai "Nama
-                                                Cabang"/alamat pakai "Alamat" di
-                                                atas). Kosongkan field mana pun
-                                                untuk memakai Identitas Toko
-                                                (Pengaturan) sebagai gantinya —
-                                                cabang baru yang belum diisi tetap
-                                                mencetak struk dengan identitas
-                                                pusat, tidak pernah kosong.
-                                            </>
-                                        )}
-                                    </p>
-                                </div>
+                                    {identityFollowsGlobalSettings ? (
+                                        <p className="mt-1 text-sm text-gray-600">
+                                            Identitas cabang pusat SELALU
+                                            mengikuti{' '}
+                                            <Link
+                                                href={route('pengaturan.index')}
+                                                className="text-primary hover:underline"
+                                            >
+                                                Identitas Toko
+                                            </Link>{' '}
+                                            (nama, alamat, telepon, footer struk)
+                                            — diatur di halaman Pengaturan, bukan
+                                            di sini. Field telepon/footer cabang
+                                            ini disembunyikan supaya tidak
+                                            terlihat seperti bisa diisi padahal
+                                            tidak berpengaruh ke struk.
+                                        </p>
+                                    ) : (
+                                        <div className="mt-1 space-y-4">
+                                            <p className="text-xs text-gray-500">
+                                                Ditampilkan di header struk
+                                                transaksi cabang ini (nama pakai
+                                                "Nama Cabang"/alamat pakai
+                                                "Alamat" di atas). Kosongkan
+                                                field mana pun untuk memakai
+                                                Identitas Toko (Pengaturan)
+                                                sebagai gantinya — cabang baru
+                                                yang belum diisi tetap mencetak
+                                                struk dengan identitas pusat,
+                                                tidak pernah kosong.
+                                            </p>
 
-                                <div>
-                                    <InputLabel htmlFor="phone" value="Telepon" />
-                                    <TextInput
-                                        id="phone"
-                                        className="mt-1 block w-full"
-                                        value={data.phone}
-                                        onChange={(e) =>
-                                            setData('phone', e.target.value)
-                                        }
-                                    />
-                                    <InputError
-                                        className="mt-2"
-                                        message={errors.phone}
-                                    />
-                                </div>
+                                            <div>
+                                                <InputLabel htmlFor="phone" value="Telepon" />
+                                                <TextInput
+                                                    id="phone"
+                                                    className="mt-1 block w-full"
+                                                    value={data.phone}
+                                                    onChange={(e) =>
+                                                        setData('phone', e.target.value)
+                                                    }
+                                                />
+                                                <InputError
+                                                    className="mt-2"
+                                                    message={errors.phone}
+                                                />
+                                            </div>
 
-                                <div>
-                                    <InputLabel
-                                        htmlFor="receipt_footer"
-                                        value="Footer Struk"
-                                    />
-                                    <textarea
-                                        id="receipt_footer"
-                                        rows={2}
-                                        className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary focus:ring-primary"
-                                        value={data.receipt_footer}
-                                        onChange={(e) =>
-                                            setData('receipt_footer', e.target.value)
-                                        }
-                                    />
-                                    <InputError
-                                        className="mt-2"
-                                        message={errors.receipt_footer}
-                                    />
+                                            <div>
+                                                <InputLabel
+                                                    htmlFor="receipt_footer"
+                                                    value="Footer Struk"
+                                                />
+                                                <textarea
+                                                    id="receipt_footer"
+                                                    rows={2}
+                                                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary focus:ring-primary"
+                                                    value={data.receipt_footer}
+                                                    onChange={(e) =>
+                                                        setData('receipt_footer', e.target.value)
+                                                    }
+                                                />
+                                                <InputError
+                                                    className="mt-2"
+                                                    message={errors.receipt_footer}
+                                                />
+                                            </div>
+                                        </div>
+                                    )}
                                 </div>
                             </div>
 

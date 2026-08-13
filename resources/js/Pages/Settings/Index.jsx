@@ -823,6 +823,8 @@ export default function Index({
                         </div>
                     </section>
 
+                    {canManageSystem && (
+                        <>
                     <hr className="border-gray-200" />
 
                     <section>
@@ -1005,6 +1007,8 @@ export default function Index({
                             </label>
                         </div>
                     </section>
+                        </>
+                    )}
 
                     <hr className="border-gray-200" />
 
