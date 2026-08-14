@@ -10,7 +10,7 @@ import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import { Head, Link, useForm } from '@inertiajs/react';
 import { useRef } from 'react';
 
-export default function Form({ item, uoms, accounts, itemCategories }) {
+export default function Form({ item, uoms, itemCategories }) {
     const editing = item !== null;
 
     const { data, setData, post, put, processing, errors } = useForm({
@@ -20,10 +20,11 @@ export default function Form({ item, uoms, accounts, itemCategories }) {
         base_uom_id: item?.base_uom_id ?? '',
         purchase_uom_id: item?.purchase_uom_id ?? '',
         standard_cost: item?.standard_cost ?? '0',
-        inventory_account_id: item?.inventory_account_id ?? '',
         item_category_id: item?.item_category_id ?? '',
         is_active: item?.is_active ?? true,
     });
+
+    const isCostOnly = data.costing_type === 'cost_only';
 
     const formRef = useRef(null);
 
@@ -125,12 +126,23 @@ export default function Form({ item, uoms, accounts, itemCategories }) {
                                     required
                                 >
                                     <option value="stocked">
-                                        Dilacak stok (stocked)
+                                        Dilacak stok (stocked) — qty & harga
+                                        rata-rata dihitung presisi dari
+                                        histori beli
                                     </option>
                                     <option value="cost_only">
-                                        Cost only (tanpa stok, mis. air)
+                                        Cost only — stok tidak dilacak
+                                        presisi, HPP pakai estimasi tetap
+                                        (mis. air gelas)
                                     </option>
                                 </SelectInput>
+                                <p className="mt-1 text-xs text-gray-500">
+                                    Keduanya tetap tercatat sebagai aset
+                                    Persediaan saat dibeli — bedanya cuma
+                                    cara menghitung HPP saat dijual: stocked
+                                    dari harga beli sungguhan, cost only dari
+                                    perkiraan tetap ("Standar Cost" di bawah).
+                                </p>
                                 <InputError
                                     className="mt-2"
                                     message={errors.costing_type}
@@ -209,60 +221,43 @@ export default function Form({ item, uoms, accounts, itemCategories }) {
                                 </div>
                             </div>
 
-                            <div>
-                                <InputLabel
-                                    htmlFor="standard_cost"
-                                    value="Standard Cost (dipakai untuk item cost_only)"
-                                />
-                                <NumberInput
-                                    id="standard_cost"
-                                    maxDecimals={4}
-                                    className="mt-1 block w-full"
-                                    value={data.standard_cost}
-                                    onChange={(plain) =>
-                                        setData('standard_cost', plain)
-                                    }
-                                    required
-                                />
-                                <InputError
-                                    className="mt-2"
-                                    message={errors.standard_cost}
-                                />
-                            </div>
+                            {isCostOnly && (
+                                <div>
+                                    <InputLabel
+                                        htmlFor="standard_cost"
+                                        value="Standar Cost"
+                                    />
+                                    <NumberInput
+                                        id="standard_cost"
+                                        maxDecimals={4}
+                                        className="mt-1 block w-full"
+                                        value={data.standard_cost}
+                                        onChange={(plain) =>
+                                            setData('standard_cost', plain)
+                                        }
+                                        required
+                                    />
+                                    <p className="mt-1 text-xs text-gray-500">
+                                        Perkiraan harga pokok per unit,
+                                        dipakai sebagai HPP setiap kali item
+                                        ini terjual — bukan dihitung dari
+                                        harga beli sungguhan (lihat
+                                        keterangan Tipe Costing di atas).
+                                    </p>
+                                    <InputError
+                                        className="mt-2"
+                                        message={errors.standard_cost}
+                                    />
+                                </div>
+                            )}
 
                             <div>
-                                <InputLabel
-                                    htmlFor="inventory_account_id"
-                                    value="Akun Persediaan"
-                                />
-                                <SelectInput
-                                    id="inventory_account_id"
-                                    className="mt-1 block w-full"
-                                    value={data.inventory_account_id}
-                                    onChange={(e) =>
-                                        setData(
-                                            'inventory_account_id',
-                                            e.target.value,
-                                        )
-                                    }
-                                    required
-                                >
-                                    <option value="" disabled>
-                                        Pilih akun
-                                    </option>
-                                    {accounts.map((account) => (
-                                        <option
-                                            key={account.id}
-                                            value={account.id}
-                                        >
-                                            {account.code} — {account.name}
-                                        </option>
-                                    ))}
-                                </SelectInput>
-                                <InputError
-                                    className="mt-2"
-                                    message={errors.inventory_account_id}
-                                />
+                                <InputLabel value="Akun Persediaan" />
+                                <p className="mt-1 rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-600">
+                                    1-1200 — Persediaan (otomatis, sama
+                                    untuk semua item — tidak bisa diganti
+                                    per item).
+                                </p>
                             </div>
 
                             <div>

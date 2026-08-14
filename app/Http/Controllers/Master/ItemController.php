@@ -131,6 +131,14 @@ class ItemController extends Controller
         return response()->json($item);
     }
 
+    /**
+     * `inventory_account_id` TIDAK diminta dari user sama sekali -- satu-
+     * satunya akun Persediaan yang pernah dipakai mesin akuntansi (lihat
+     * PurchaseService/SaleService/StockOpnameService, semuanya hardcode
+     * kode `1-1200`) diresolve otomatis di sini, pola sama quickCreate()
+     * di bawah. Memberi user pilihan akun lain sebelumnya cuma
+     * membingungkan tanpa efek apa pun.
+     */
     private function validateData(Request $request, ?int $ignoreId = null): array
     {
         $data = $request->validate([
@@ -140,24 +148,23 @@ class ItemController extends Controller
             'base_uom_id' => ['required', 'exists:uoms,id'],
             'purchase_uom_id' => ['required', 'exists:uoms,id'],
             'standard_cost' => ['required', 'numeric', 'min:0'],
-            'inventory_account_id' => ['required', 'exists:accounts,id'],
             'item_category_id' => ['nullable', 'exists:item_categories,id'],
             'is_active' => ['boolean'],
         ]);
 
         $data['is_active'] = $request->boolean('is_active');
+        $data['inventory_account_id'] = Account::where('code', '1-1200')->firstOrFail()->id;
 
         return $data;
     }
 
     /**
-     * @return array{uoms: \Illuminate\Support\Collection, accounts: \Illuminate\Support\Collection, itemCategories: \Illuminate\Support\Collection}
+     * @return array{uoms: \Illuminate\Support\Collection, itemCategories: \Illuminate\Support\Collection}
      */
     private function formOptions(): array
     {
         return [
             'uoms' => Uom::orderBy('code')->get(),
-            'accounts' => Account::where('type', 'asset')->orderBy('code')->get(),
             'itemCategories' => ItemCategory::orderBy('name')->get(),
         ];
     }
