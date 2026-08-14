@@ -577,29 +577,15 @@ export default function Index({
                         </div>
                     </section>
 
-                    <hr className="border-gray-200" />
+                    {!multiBranchEnabled && (
+                        <>
+                            <hr className="border-gray-200" />
 
-                    <section>
-                        <h3 className="mb-3 text-base font-semibold text-gray-900">
-                            Identitas Toko
-                        </h3>
-                        <div className="rounded-lg bg-white p-6 shadow-sm ring-1 ring-gray-200">
-                            {multiBranchEnabled ? (
-                                <p className="text-sm text-gray-600">
-                                    Multi-Cabang aktif — identitas struk (nama,
-                                    alamat, telepon, footer) sekarang diatur di{' '}
-                                    <Link
-                                        href={route('master.outlets.index')}
-                                        className="text-primary hover:underline"
-                                    >
-                                        Kelola Cabang
-                                    </Link>{' '}
-                                    (termasuk Cabang Pusat), bukan di sini lagi
-                                    — supaya tidak ada dua tempat mengatur hal
-                                    yang sama.
-                                </p>
-                            ) : (
-                                <>
+                            <section>
+                                <h3 className="mb-3 text-base font-semibold text-gray-900">
+                                    Identitas Toko
+                                </h3>
+                                <div className="rounded-lg bg-white p-6 shadow-sm ring-1 ring-gray-200">
                                     <p className="text-sm text-gray-600">
                                         Dicetak di bagian atas struk (kasir web &
                                         aplikasi mobile). Boleh dikosongkan.
@@ -652,10 +638,10 @@ export default function Index({
                                             Simpan Identitas Toko
                                         </PrimaryButton>
                                     </form>
-                                </>
-                            )}
-                        </div>
-                    </section>
+                                </div>
+                            </section>
+                        </>
+                    )}
 
                     <hr className="border-gray-200" />
 
@@ -664,19 +650,7 @@ export default function Index({
                             Struk
                         </h3>
                         <div className="rounded-lg bg-white p-6 shadow-sm ring-1 ring-gray-200">
-                            {multiBranchEnabled ? (
-                                <p className="text-sm text-gray-600">
-                                    Multi-Cabang aktif — footer struk sekarang
-                                    diatur di{' '}
-                                    <Link
-                                        href={route('master.outlets.index')}
-                                        className="text-primary hover:underline"
-                                    >
-                                        Kelola Cabang
-                                    </Link>{' '}
-                                    (termasuk Cabang Pusat), bukan di sini lagi.
-                                </p>
-                            ) : (
+                            {!multiBranchEnabled && (
                                 <>
                                     <p className="text-sm text-gray-600">
                                         Baris teks di bagian paling bawah struk.
@@ -701,7 +675,7 @@ export default function Index({
                                 </>
                             )}
 
-                            <div className="mt-6 border-t border-gray-100 pt-4">
+                            <div className={multiBranchEnabled ? '' : 'mt-6 border-t border-gray-100 pt-4'}>
                                 <label className="flex cursor-pointer items-start gap-3">
                                     <input
                                         type="checkbox"
