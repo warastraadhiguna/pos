@@ -3,6 +3,11 @@ import Dropdown from '@/Components/Dropdown';
 import { Link, usePage } from '@inertiajs/react';
 import { useState } from 'react';
 
+// Sama sumbernya dengan judul tab browser (lihat app.jsx) -- APP_NAME di
+// .env, diteruskan Vite sebagai VITE_APP_NAME. Dipakai di sebelah logo
+// sidebar supaya nama toko/instansi kelihatan tanpa hardcode "WAnPOS".
+const appName = import.meta.env.VITE_APP_NAME || 'WAnPOS';
+
 const icons = {
     dashboard:
         'M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6',
@@ -470,15 +475,23 @@ export default function AuthenticatedLayout({ header, children }) {
                     (collapsed ? 'w-16' : 'w-64')
                 }
             >
-                <div className={'flex items-center py-5 ' + (collapsed ? 'justify-center px-2' : 'justify-between px-6')}>
-                    <Link href="/">
+                <div className={'flex items-center py-5 ' + (collapsed ? 'justify-center px-2' : 'justify-between gap-2 px-6')}>
+                    <Link href="/" className={collapsed ? undefined : 'flex min-w-0 items-center gap-3'}>
                         <BrandMark />
+                        {!collapsed && (
+                            <span
+                                className="truncate text-base font-semibold text-white"
+                                title={appName}
+                            >
+                                {appName}
+                            </span>
+                        )}
                     </Link>
                     {!collapsed && (
                         <button
                             type="button"
                             onClick={toggleCollapsed}
-                            className="text-gray-400 hover:text-white"
+                            className="shrink-0 text-gray-400 hover:text-white"
                             aria-label="Ciutkan menu"
                             title="Ciutkan menu"
                         >
@@ -512,13 +525,23 @@ export default function AuthenticatedLayout({ header, children }) {
                         onClick={() => setShowingMobileNav(false)}
                     />
                     <aside className="relative flex h-full w-64 flex-col bg-gray-900">
-                        <div className="flex items-center justify-between px-6 py-5">
-                            <Link href="/" onClick={() => setShowingMobileNav(false)}>
+                        <div className="flex items-center justify-between gap-2 px-6 py-5">
+                            <Link
+                                href="/"
+                                onClick={() => setShowingMobileNav(false)}
+                                className="flex min-w-0 items-center gap-3"
+                            >
                                 <BrandMark />
+                                <span
+                                    className="truncate text-base font-semibold text-white"
+                                    title={appName}
+                                >
+                                    {appName}
+                                </span>
                             </Link>
                             <button
                                 onClick={() => setShowingMobileNav(false)}
-                                className="text-gray-400 hover:text-white"
+                                className="shrink-0 text-gray-400 hover:text-white"
                                 aria-label="Tutup menu"
                             >
                                 <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
