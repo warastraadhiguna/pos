@@ -3,11 +3,9 @@ import SelectInput from "@/Components/SelectInput";
 import AuthenticatedLayout from "@/Layouts/AuthenticatedLayout";
 import { Head, router } from "@inertiajs/react";
 
-// Halaman ini SENGAJA tidak dicantumkan di navGroups (AuthenticatedLayout.jsx)
-// -- lihat routes/web.php + docs/DEVICE_BINDING.md untuk URL-nya. Tetap
-// digerbangi permission:devices.manage seperti halaman admin lain manapun.
 const formatDateTimeWIB = (iso) => {
     if (!iso) return "-";
+
     const parts = new Intl.DateTimeFormat("en-CA", {
         timeZone: "Asia/Jakarta",
         year: "numeric",
@@ -17,8 +15,12 @@ const formatDateTimeWIB = (iso) => {
         minute: "2-digit",
         hour12: false,
     }).formatToParts(new Date(iso));
+
     const get = (type) => parts.find((p) => p.type === type)?.value;
-    return `${get("year")}-${get("month")}-${get("day")} ${get("hour")}:${get("minute")} WIB`;
+
+    return `${get("year")}-${get("month")}-${get("day")} ${get(
+        "hour",
+    )}:${get("minute")} WIB`;
 };
 
 const statusBadge = {
@@ -44,7 +46,9 @@ export default function Index({ devices, outlets }) {
         router.put(
             route("devices.approve", device.id),
             {},
-            { preserveScroll: true },
+            {
+                preserveScroll: true,
+            },
         );
     };
 
@@ -56,21 +60,25 @@ export default function Index({ devices, outlets }) {
         ) {
             return;
         }
+
         router.put(
             route("devices.revoke", device.id),
             {},
-            { preserveScroll: true },
+            {
+                preserveScroll: true,
+            },
         );
     };
 
-    // Multi-Cabang Lapisan 1 -- device = sumber utama resolusi cabang untuk
-    // transaksi mobile nanti (Lapisan 3). Belum di-enforce di sini, cuma
-    // penugasan -- lihat DeviceService::assignOutlet().
     const assignOutlet = (device, outletId) => {
         router.put(
             route("devices.assign-outlet", device.id),
-            { outlet_id: outletId || null },
-            { preserveScroll: true },
+            {
+                outlet_id: outletId || null,
+            },
+            {
+                preserveScroll: true,
+            },
         );
     };
 
@@ -85,7 +93,7 @@ export default function Index({ devices, outlets }) {
             <Head title="Kelola Perangkat" />
 
             <div className="py-12">
-                <div className="mx-auto max-w-7xl space-y-4 sm:px-6 lg:px-8">
+                <div className="mx-auto max-w-screen-2xl space-y-4 px-4 sm:px-6 lg:px-8">
                     <p className="text-sm text-gray-500">
                         Perangkat mobile yang pernah mencoba login. Perangkat
                         BARU otomatis disetujui kalau grace period aktif (lihat
@@ -94,55 +102,67 @@ export default function Index({ devices, outlets }) {
                         bisa login/transaksi.
                     </p>
 
-                    <div className="overflow-x-auto bg-white shadow-sm sm:rounded-lg">
-                        <table className="min-w-[1200px] divide-y divide-gray-200">
-                            <thead className="sticky top-0 bg-gray-50">
+                    <div className="w-full overflow-x-auto bg-white shadow-sm sm:rounded-lg">
+                        <table className="w-[1400px] table-fixed divide-y divide-gray-200">
+                            <thead className="bg-gray-50">
                                 <tr>
-                                    <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
+                                    <th className="w-48 px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
                                         Device ID
                                     </th>
-                                    <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
+
+                                    <th className="w-40 px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
                                         Label
                                     </th>
-                                    <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
+
+                                    <th className="w-48 px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
                                         Status
                                     </th>
-                                    <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
+
+                                    <th className="w-56 px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
                                         Terakhir Terlihat
                                     </th>
-                                    <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
+
+                                    <th className="w-40 px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
                                         Didaftarkan Oleh
                                     </th>
-                                    <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
+
+                                    <th className="w-56 px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
                                         Cabang
                                     </th>
-                                    <th className="px-6 py-3" />
+
+                                    <th className="w-48 px-6 py-3" />
                                 </tr>
                             </thead>
+
                             <tbody className="divide-y divide-gray-200 bg-white">
                                 {devices.map((device) => (
                                     <tr key={device.id}>
                                         <td className="whitespace-nowrap px-6 py-4 font-mono text-xs text-gray-600">
                                             {device.device_id}
                                         </td>
+
                                         <td className="whitespace-nowrap px-6 py-4 text-sm text-gray-900">
                                             {device.label ?? "-"}
                                         </td>
+
                                         <td className="whitespace-nowrap px-6 py-4 text-sm">
                                             {statusBadge[device.status] ??
                                                 device.status}
                                         </td>
+
                                         <td className="whitespace-nowrap px-6 py-4 text-sm text-gray-600">
                                             {formatDateTimeWIB(
                                                 device.last_seen_at,
                                             )}
                                         </td>
+
                                         <td className="whitespace-nowrap px-6 py-4 text-sm text-gray-600">
                                             {device.registered_by?.name ?? "-"}
                                         </td>
-                                        <td className="whitespace-nowrap px-6 py-4 text-sm">
+
+                                        <td className="px-6 py-4 text-sm">
                                             <SelectInput
-                                                className="h-9"
+                                                className="h-9 w-full"
                                                 value={device.outlet?.id ?? ""}
                                                 onChange={(e) =>
                                                     assignOutlet(
@@ -154,6 +174,7 @@ export default function Index({ devices, outlets }) {
                                                 <option value="">
                                                     — Belum diatur —
                                                 </option>
+
                                                 {outlets.map((outlet) => (
                                                     <option
                                                         key={outlet.id}
@@ -164,6 +185,7 @@ export default function Index({ devices, outlets }) {
                                                 ))}
                                             </SelectInput>
                                         </td>
+
                                         <td className="whitespace-nowrap px-6 py-4 text-right text-sm">
                                             <div className="flex justify-end gap-2">
                                                 {device.status !==
@@ -176,6 +198,7 @@ export default function Index({ devices, outlets }) {
                                                         Setujui
                                                     </SecondaryButton>
                                                 )}
+
                                                 {device.status !==
                                                     "revoked" && (
                                                     <SecondaryButton
@@ -190,6 +213,7 @@ export default function Index({ devices, outlets }) {
                                         </td>
                                     </tr>
                                 ))}
+
                                 {devices.length === 0 && (
                                     <tr>
                                         <td
