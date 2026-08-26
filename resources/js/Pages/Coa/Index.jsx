@@ -205,7 +205,7 @@ export default function Index({ asOf, accounts }) {
                         if (rows.length === 0) return null;
 
                         return (
-                            <div key={type} className="overflow-hidden bg-white shadow-sm sm:rounded-lg">
+                            <div key={type} className="w-full overflow-x-auto overscroll-x-contain bg-white shadow-sm sm:rounded-lg">
                                 <h3 className="border-b border-gray-200 p-4 font-semibold text-gray-900">
                                     {TYPE_LABEL[type]}
                                 </h3>

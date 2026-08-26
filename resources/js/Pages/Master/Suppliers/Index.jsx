@@ -30,7 +30,7 @@ export default function Index({ suppliers }) {
                     </div>
 
                     {/* Card tabel */}
-                    <div className="overflow-hidden bg-white shadow-sm sm:rounded-lg">
+                    <div className="w-full overflow-x-auto overscroll-x-contain bg-white shadow-sm sm:rounded-lg">
                         {/*
                             Wrapper ini yang membuat tabel
                             bisa di-scroll horizontal di HP.

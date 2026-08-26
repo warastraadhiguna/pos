@@ -65,7 +65,7 @@ export default function SupplierPayableShow({ supplier, asOf, outstanding, notas
 
                     <div>
                         <h3 className="mb-3 font-semibold text-gray-900">Rincian per Nota</h3>
-                        <div className="overflow-hidden bg-white shadow-sm sm:rounded-lg">
+                        <div className="w-full overflow-x-auto overscroll-x-contain bg-white shadow-sm sm:rounded-lg">
                             <table className="min-w-full divide-y divide-gray-200">
                                 <thead className="bg-gray-50">
                                     <tr>

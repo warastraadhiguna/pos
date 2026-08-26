@@ -176,7 +176,7 @@ export default function Dashboard({ stats, recentSales }) {
                         </div>
                     </div>
 
-                    <div className="rounded-xl border border-gray-200 bg-white shadow-sm">
+                    <div className="w-full overflow-x-auto overscroll-x-contain rounded-xl border border-gray-200 bg-white shadow-sm">
                         <div className="flex items-center justify-between border-b border-gray-100 px-6 py-4">
                             <h4 className="font-semibold text-gray-900">
                                 Transaksi Terbaru

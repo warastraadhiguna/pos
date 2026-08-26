@@ -117,7 +117,7 @@ export default function Index({ period, preview, history }) {
                         </form>
                     </div>
 
-                    <div className="overflow-hidden bg-white shadow-sm sm:rounded-lg">
+                    <div className="w-full overflow-x-auto overscroll-x-contain bg-white shadow-sm sm:rounded-lg">
                         <h3 className="p-4 font-semibold text-gray-900">Riwayat Penyusutan</h3>
                         <table className="min-w-full divide-y divide-gray-200">
                             <thead className="bg-gray-50">

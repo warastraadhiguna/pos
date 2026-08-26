@@ -237,7 +237,8 @@ export default function Create({ purchaseOrder, lines, cashAccounts }) {
 
                             <InputError message={errors.lines} />
 
-                            <table className="min-w-full divide-y divide-gray-200">
+                            <div className="w-full overflow-x-auto overscroll-x-contain">
+                            <table className="min-w-[720px] w-full divide-y divide-gray-200">
                                 <thead>
                                     <tr>
                                         <th className="px-2 py-2 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
@@ -299,6 +300,7 @@ export default function Create({ purchaseOrder, lines, cashAccounts }) {
                                     ))}
                                 </tbody>
                             </table>
+                            </div>
 
                             <div className="flex items-center gap-4">
                                 <PrimaryButton disabled={processing}>

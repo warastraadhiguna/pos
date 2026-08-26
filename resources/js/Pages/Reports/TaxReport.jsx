@@ -14,7 +14,8 @@ function DetailTable({ details, emptyLabel }) {
     }
 
     return (
-        <table className="mt-2 w-full text-sm">
+        <div className="w-full overflow-x-auto overscroll-x-contain">
+        <table className="mt-2 min-w-[640px] w-full text-sm">
             <thead>
                 <tr className="border-b border-gray-200 text-left text-xs uppercase tracking-wider text-gray-500">
                     <th className="py-2 pr-3 font-medium">Tanggal</th>
@@ -34,6 +35,7 @@ function DetailTable({ details, emptyLabel }) {
                 ))}
             </tbody>
         </table>
+        </div>
     );
 }
 

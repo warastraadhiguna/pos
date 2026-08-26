@@ -865,7 +865,7 @@ export default function AuthenticatedLayout({ header, children }) {
             ============================================================ */}
             <div
                 className={
-                    "flex min-h-screen flex-col transition-all duration-200 " +
+                    "flex min-h-screen min-w-0 flex-col transition-all duration-200 " +
                     (collapsed ? "lg:pl-16" : "lg:pl-64")
                 }
             >
@@ -956,7 +956,7 @@ export default function AuthenticatedLayout({ header, children }) {
                     </div>
                 )}
 
-                <main className="flex-1">{children}</main>
+                <main className="min-w-0 flex-1">{children}</main>
             </div>
         </div>
     );
