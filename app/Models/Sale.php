@@ -27,6 +27,9 @@ use Illuminate\Database\Eloquent\Relations\MorphTo;
     'grand_total',
     'cash_received',
     'change_amount',
+    'discount_type',
+    'discount_value',
+    'discount_amount',
     'payment_method',
     'cash_account_code',
     'status',
@@ -54,6 +57,8 @@ class Sale extends Model
             'grand_total' => 'decimal:4',
             'cash_received' => 'decimal:4',
             'change_amount' => 'decimal:4',
+            'discount_value' => 'decimal:4',
+            'discount_amount' => 'decimal:4',
         ];
     }
 

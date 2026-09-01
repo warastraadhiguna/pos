@@ -65,6 +65,7 @@ class SettingController extends Controller
             'draftEnabled' => $setting->draft_enabled,
             'qrisEnabled' => $setting->qris_enabled,
             'qrisCashAccountCode' => $setting->qris_cash_account_code,
+            'discountEnabled' => $setting->discount_enabled,
             // Device Binding -- lihat rancangan yang disetujui, poin 8.
             // ISO 8601 (bukan objek Carbon) supaya Inertia/JS mengonsumsinya
             // tanpa parsing khusus, konsisten field tanggal lain di sini.
@@ -425,6 +426,31 @@ class SettingController extends Controller
             $data['qris_enabled']
                 ? 'Metode pembayaran QRIS diaktifkan.'
                 : 'Metode pembayaran QRIS dimatikan — tidak akan muncul di kasir.',
+        );
+    }
+
+    /**
+     * Saklar global fitur Diskon nota (persen/Rupiah, diisi kasir di dialog
+     * Bayar). OFF berarti field Diskon tidak muncul sama sekali di kasir
+     * manapun, dan SaleController::store() menolak sale yang membawa
+     * discount_value > 0 (jaring pengaman kedua, sama pola qris_enabled
+     * dengan InvalidQrisAccountException di SaleService::createSale()).
+     * Tidak ada field tambahan wajib seperti QRIS's akun bank -- diskon
+     * langsung memotong Grand Total, tidak butuh akun tujuan. Sengaja TIDAK
+     * dicatat ke company_setting_logs, pola sama toggle fitur lain di file
+     * ini (member/table/note/variation/draft/qris).
+     */
+    public function updateDiscountEnabled(Request $request): RedirectResponse
+    {
+        $data = $request->validate(['discount_enabled' => ['required', 'boolean']]);
+
+        CompanySetting::current()->update(['discount_enabled' => $data['discount_enabled']]);
+
+        return Redirect::route('pengaturan.index')->with(
+            'success',
+            $data['discount_enabled']
+                ? 'Fitur Diskon diaktifkan.'
+                : 'Fitur Diskon dimatikan — tidak akan muncul di kasir.',
         );
     }
 

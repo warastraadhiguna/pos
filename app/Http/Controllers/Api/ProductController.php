@@ -108,6 +108,12 @@ class ProductController extends Controller
      * SaleService::createSale()) — server yang meresolve akun tujuan QRIS
      * sepenuhnya sendiri dari CompanySetting::qris_cash_account_code saat
      * sale QRIS itu benar-benar dibuat.
+     *
+     * `meta.discount_enabled` adalah saklar fitur Diskon nota (persen/
+     * Rupiah, diisi kasir di dialog Bayar) — kalau false, field Diskon tidak
+     * ditampilkan sama sekali; SaleController::store() juga menolak sale
+     * yang membawa discount_value > 0 saat saklar ini mati (jaring pengaman
+     * kedua, pola sama qris_enabled).
      */
     public function index(Request $request): AnonymousResourceCollection
     {
@@ -144,6 +150,7 @@ class ProductController extends Controller
                 'variation_enabled' => $setting->variation_enabled,
                 'draft_enabled' => $setting->draft_enabled,
                 'qris_enabled' => $setting->qris_enabled,
+                'discount_enabled' => $setting->discount_enabled,
             ]]);
     }
 

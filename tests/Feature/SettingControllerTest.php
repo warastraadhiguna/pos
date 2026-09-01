@@ -675,4 +675,61 @@ class SettingControllerTest extends TestCase
                 && ! collect($accounts)->pluck('code')->contains('1-1000')),
         );
     }
+
+    public function test_discount_enabled_defaults_to_false(): void
+    {
+        $this->assertFalse(CompanySetting::current()->discount_enabled);
+    }
+
+    public function test_admin_can_turn_on_discount_without_creating_a_log_entry(): void
+    {
+        $admin = User::factory()->create(['role_id' => $this->roleWith(['company-settings.manage'])->id]);
+
+        $response = $this->actingAs($admin)->put('/pengaturan/diskon', [
+            'discount_enabled' => true,
+        ]);
+
+        $response->assertRedirect(route('pengaturan.index'));
+        $this->assertTrue(CompanySetting::current()->fresh()->discount_enabled);
+        $this->assertSame(0, CompanySettingLog::count());
+    }
+
+    public function test_admin_can_turn_off_discount(): void
+    {
+        CompanySetting::current()->update(['discount_enabled' => true]);
+        $admin = User::factory()->create(['role_id' => $this->roleWith(['company-settings.manage'])->id]);
+
+        $response = $this->actingAs($admin)->put('/pengaturan/diskon', [
+            'discount_enabled' => false,
+        ]);
+
+        $response->assertRedirect(route('pengaturan.index'));
+        $this->assertFalse(CompanySetting::current()->fresh()->discount_enabled);
+    }
+
+    public function test_non_admin_cannot_update_discount(): void
+    {
+        $kasir = User::factory()->create(['role_id' => $this->roleWith(['kasir.access'])->id]);
+
+        $response = $this->actingAs($kasir)->put('/pengaturan/diskon', [
+            'discount_enabled' => true,
+        ]);
+
+        $response->assertForbidden();
+        $this->assertFalse(CompanySetting::current()->fresh()->discount_enabled);
+    }
+
+    public function test_settings_page_exposes_discount_enabled(): void
+    {
+        CompanySetting::current()->update(['discount_enabled' => true]);
+        $admin = User::factory()->create(['role_id' => $this->roleWith(['company-settings.manage'])->id]);
+
+        $response = $this->actingAs($admin)->get('/pengaturan');
+
+        $response->assertOk();
+        $response->assertInertia(fn ($page) => $page
+            ->component('Settings/Index')
+            ->where('discountEnabled', true),
+        );
+    }
 }

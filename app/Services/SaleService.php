@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Exceptions\CashierMismatchException;
+use App\Exceptions\DiscountDisabledException;
 use App\Exceptions\InsufficientCashReceivedException;
 use App\Exceptions\InvalidQrisAccountException;
 use App\Exceptions\UnreconciledChangeAmountException;
@@ -93,6 +94,8 @@ class SaleService
      *     table_id?: int|null,
      *     table_name?: string|null,
      *     note?: string|null,
+     *     discount_type?: string|null,
+     *     discount_value?: int|float|string|null,
      *     lines: array<int, array{product_id: int, qty: int|float|string, unit_price: int|float|string, note?: string|null, variations?: array<int, array{variation_id: int, name?: string|null, price?: int|float|string|null}>}>,
      * }  $data
      *
@@ -140,6 +143,26 @@ class SaleService
      * to be Kas throws InvalidQrisAccountException — this is a hard
      * invariant, not a preference: QRIS money always lands in a bank
      * account, never physically in the cash drawer.
+     *
+     * discount_type/discount_value are BOTH OPTIONAL (per-nota, diisi kasir
+     * di dialog Bayar -- lihat rancangan fitur Diskon). discount_type is
+     * 'percentage' or 'amount'; discount_value is the raw number the
+     * cashier typed (10 for 10%, or a Rupiah figure). Absent/zero means no
+     * discount, identical to behaviour before this feature existed. When
+     * present and nonzero, this method throws DiscountDisabledException
+     * unless CompanySetting::current()->discount_enabled is true -- a
+     * second gate mirroring the client-side toggle (SettingController::
+     * updateDiscountEnabled()), since a stale client UI could theoretically
+     * still submit one.
+     *
+     * The resolved discount_amount (Rupiah) is allocated PROPORTIONALLY
+     * across the already-computed $subtotal/$taxTotal (their existing
+     * ratio), NOT by reworking the per-line tax extraction above -- see the
+     * allocation step right after the reconciliation check below. This
+     * keeps subtotal+tax_total==grand_total true by construction (both
+     * sides already reflect the discount), so PPN Keluaran posted to the
+     * journal is itself reduced proportionally to the discount given,
+     * without a separate "Potongan Penjualan" contra-revenue account.
      *
      * client_user_id is likewise OPTIONAL and, when present, likewise never
      * trusted blindly — see CashierMismatchException's docblock. It exists
@@ -239,7 +262,15 @@ class SaleService
             );
         }
 
-        return DB::transaction(function () use ($data, $localUuid) {
+        $discountType = $data['discount_type'] ?? null;
+        $discountValue = isset($data['discount_value']) ? (string) $data['discount_value'] : '0';
+        if (bccomp($discountValue, '0', self::SCALE) > 0 && ! CompanySetting::current()->discount_enabled) {
+            throw new DiscountDisabledException(
+                "Fitur Diskon sedang dimatikan (discount_value={$discountValue}) -- aktifkan dulu di Pengaturan."
+            );
+        }
+
+        return DB::transaction(function () use ($data, $localUuid, $discountType, $discountValue) {
             $warehouse = Warehouse::findOrFail($data['warehouse_id']);
             $paymentMethod = $data['payment_method'] ?? 'cash';
 
@@ -373,6 +404,54 @@ class SaleService
                 );
             }
 
+            // Alokasi Diskon -- lihat docblock method ini. $subtotal/$taxTotal
+            // di atas masih PRA-diskon di sini; keduanya dikurangi
+            // proporsional sesuai porsinya masing-masing terhadap
+            // $grandTotal pra-diskon, lalu $grandTotal dihitung ulang dari
+            // keduanya -- identik $grandTotal pra-diskon dikurangi
+            // $discountAmount, tapi lewat subtotal/taxTotal supaya invarian
+            // rekonsiliasi di atas tetap valid untuk kode setelah titik ini.
+            // $subtotalShare DIHITUNG LEWAT PENGURANGAN ($discountAmount -
+            // $taxShare), BUKAN pembagian independen kedua -- pola identik
+            // createSaleLine() (net dibagi, tax dikurangkan) -- menjamin
+            // $subtotalShare + $taxShare eksak sama dengan $discountAmount,
+            // tanpa residu pembulatan ganda. $taxShare (estimasi proporsional
+            // awal) lalu DI-CLAMP ke rentang [max(0, $discountAmount-
+            // $subtotal), min($discountAmount, $taxTotal)] -- SELALU rentang
+            // valid selama $discountAmount <= $subtotal+$taxTotal (dijamin
+            // di atas) -- supaya $subtotal/$taxTotal setelah dikurangi TIDAK
+            // PERNAH jadi negatif walau diskon-nya (hampir) 100% dari total.
+            $discountAmount = '0';
+            if (bccomp($discountValue, '0', self::SCALE) > 0 && bccomp($grandTotal, '0', self::SCALE) > 0) {
+                $discountAmount = $discountType === 'percentage'
+                    ? bcmul($grandTotal, bcdiv($discountValue, '100', self::SCALE), self::SCALE)
+                    : (bccomp($discountValue, $grandTotal, self::SCALE) > 0 ? $grandTotal : $discountValue); // Rp tidak boleh melebihi total
+                // bcmul PADA SKALA TINGGI (8, bukan SCALE=4) sebelum bcdiv
+                // -- satu-satunya titik pemotongan presisi di sini adalah
+                // bcdiv terakhir, BUKAN rasio taxTotal/grandTotal yang
+                // dipotong dulu ke skala 4 secara terpisah (itu akan
+                // membuang beberapa digit signifikan dari rasio SEBELUM
+                // dikalikan, jauh lebih tidak presisi) -- pola ini
+                // dicerminkan PERSIS di `Sale` (Flutter), yang menghitung
+                // `discountAmount * taxTotal / grandTotal` sebagai SATU
+                // pecahan lalu dipotong sekali di akhir.
+                $taxShare = bcdiv(bcmul($discountAmount, $taxTotal, 8), $grandTotal, self::SCALE);
+                $lowerBound = bccomp('0', bcsub($discountAmount, $subtotal, self::SCALE), self::SCALE) > 0
+                    ? '0'
+                    : bcsub($discountAmount, $subtotal, self::SCALE);
+                $upperBound = bccomp($discountAmount, $taxTotal, self::SCALE) > 0 ? $taxTotal : $discountAmount;
+                if (bccomp($taxShare, $lowerBound, self::SCALE) < 0) {
+                    $taxShare = $lowerBound;
+                }
+                if (bccomp($taxShare, $upperBound, self::SCALE) > 0) {
+                    $taxShare = $upperBound;
+                }
+                $subtotalShare = bcsub($discountAmount, $taxShare, self::SCALE);
+                $subtotal = bcsub($subtotal, $subtotalShare, self::SCALE);
+                $taxTotal = bcsub($taxTotal, $taxShare, self::SCALE);
+                $grandTotal = bcadd($subtotal, $taxTotal, self::SCALE);
+            }
+
             if ($paymentMethod === 'qris') {
                 // QRIS dibayar PAS lewat scan -- tidak ada konsep uang
                 // diterima/kembalian sama sekali (lihat rancangan fitur
@@ -412,6 +491,9 @@ class SaleService
                 'grand_total' => $grandTotal,
                 'cash_received' => $cashReceived,
                 'change_amount' => $changeAmount,
+                'discount_type' => bccomp($discountAmount, '0', self::SCALE) > 0 ? $discountType : null,
+                'discount_value' => $discountValue,
+                'discount_amount' => $discountAmount,
             ]);
 
             $this->postSaleJournal($sale, $subtotal, $taxTotal, $grandTotal, $hppGrandTotal, $occurredAt, $cashAccountCode);

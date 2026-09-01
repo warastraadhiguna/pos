@@ -82,6 +82,23 @@ class SaleController extends Controller
             // tidak pernah dengar soal draft itu, lihat docblock
             // DraftSyncService::finalizeByLocalUuid().
             'draft_local_uuid' => ['nullable', 'uuid'],
+            // Diskon nota (persen/Rupiah, diisi kasir di dialog Bayar) --
+            // lihat rancangan fitur Diskon & docblock SaleService::
+            // createSale(). Keduanya opsional/independen secara validasi di
+            // sini; gerbang discount_enabled DAN batas 100% untuk persen
+            // ditegakkan di SaleService (butuh CompanySetting::current(),
+            // bukan aturan statis).
+            'discount_type' => ['nullable', 'string', 'in:percentage,amount'],
+            'discount_value' => [
+                'nullable',
+                'numeric',
+                'min:0',
+                function (string $attribute, mixed $value, \Closure $fail) use ($request) {
+                    if ($request->input('discount_type') === 'percentage' && $value > 100) {
+                        $fail('Diskon persen tidak boleh lebih dari 100.');
+                    }
+                },
+            ],
             'lines' => ['required', 'array', 'min:1'],
             'lines.*.product_id' => ['required', 'exists:products,id'],
             'lines.*.note' => ['nullable', 'string', 'max:2000'],
@@ -133,6 +150,8 @@ class SaleController extends Controller
                 'table_name' => $validated['table_name'] ?? null,
                 'note' => $validated['note'] ?? null,
                 'draft_local_uuid' => $validated['draft_local_uuid'] ?? null,
+                'discount_type' => $validated['discount_type'] ?? null,
+                'discount_value' => $validated['discount_value'] ?? null,
                 'lines' => $validated['lines'],
             ]);
         } catch (CashierMismatchException $e) {

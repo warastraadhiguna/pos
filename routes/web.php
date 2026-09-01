@@ -95,6 +95,7 @@ Route::middleware(['auth', 'verified', 'permission:company-settings.manage'])->p
     Route::put('/cetak-struk-mobile', [SettingController::class, 'updateMobilePrintReceipt'])->name('cetak-struk-mobile.update');
     Route::put('/member', [SettingController::class, 'updateMemberEnabled'])->name('member.update');
     Route::put('/qris', [SettingController::class, 'updateQris'])->name('qris.update');
+    Route::put('/diskon', [SettingController::class, 'updateDiscountEnabled'])->name('diskon.update');
 });
 
 // Role Developer (hidden super-admin) -- toggle ON/OFF fitur (Multi-Cabang,

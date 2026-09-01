@@ -38,6 +38,7 @@ export default function Index({
     draftEnabled,
     qrisEnabled,
     qrisCashAccountCode,
+    discountEnabled,
     bankAccounts,
     deviceBindingGracePeriodEndsAt,
     deviceBindingGracePeriodActive,
@@ -89,6 +90,9 @@ export default function Index({
     );
     const [savingQris, setSavingQris] = useState(false);
     const qrisErrors = usePage().props.errors ?? {};
+
+    const [discountOn, setDiscountOn] = useState(discountEnabled);
+    const [savingDiscountEnabled, setSavingDiscountEnabled] = useState(false);
 
     const [graceDays, setGraceDays] = useState('14');
     const [savingGracePeriod, setSavingGracePeriod] = useState(false);
@@ -340,6 +344,22 @@ export default function Index({
                     setQrisAccountCode(previous.qrisAccountCode);
                 },
                 onFinish: () => setSavingQris(false),
+            },
+        );
+    };
+
+    const submitDiscountEnabled = (checked) => {
+        if (savingDiscountEnabled) return;
+        const previous = discountOn;
+        setDiscountOn(checked);
+        setSavingDiscountEnabled(true);
+        router.put(
+            route('pengaturan.diskon.update'),
+            { discount_enabled: checked },
+            {
+                preserveScroll: true,
+                onError: () => setDiscountOn(previous),
+                onFinish: () => setSavingDiscountEnabled(false),
             },
         );
     };
@@ -1092,6 +1112,41 @@ export default function Index({
                                     />
                                 </div>
                             )}
+                        </div>
+                    </section>
+
+                    <hr className="border-gray-200" />
+
+                    <section>
+                        <h3 className="mb-3 text-base font-semibold text-gray-900">
+                            Diskon
+                        </h3>
+                        <div className="rounded-lg bg-white p-6 shadow-sm ring-1 ring-gray-200">
+                            <label className="flex cursor-pointer items-start gap-3">
+                                <input
+                                    type="checkbox"
+                                    className="mt-1 rounded text-primary focus:ring-primary"
+                                    checked={discountOn}
+                                    disabled={savingDiscountEnabled}
+                                    onChange={(e) =>
+                                        submitDiscountEnabled(e.target.checked)
+                                    }
+                                />
+                                <span>
+                                    <span className="block font-medium text-gray-900">
+                                        Aktifkan fitur Diskon
+                                    </span>
+                                    <span className="block text-sm text-gray-500">
+                                        Kalau aktif, kasir bisa mengisi diskon
+                                        per transaksi (persen atau Rupiah) di
+                                        dialog Bayar. PPN yang dilaporkan ikut
+                                        berkurang proporsional dengan diskon
+                                        yang diberikan. Kalau mati, field
+                                        Diskon tidak muncul sama sekali di
+                                        kasir manapun.
+                                    </span>
+                                </span>
+                            </label>
                         </div>
                     </section>
 

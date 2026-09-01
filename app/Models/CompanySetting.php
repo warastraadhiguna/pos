@@ -30,6 +30,7 @@ use Illuminate\Database\Eloquent\Model;
     'draft_enabled',
     'qris_enabled',
     'qris_cash_account_code',
+    'discount_enabled',
     'device_binding_grace_period_ends_at',
     'multi_branch_enabled',
 ])]
@@ -62,6 +63,7 @@ class CompanySetting extends Model
             'variation_enabled' => 'boolean',
             'draft_enabled' => 'boolean',
             'qris_enabled' => 'boolean',
+            'discount_enabled' => 'boolean',
             'device_binding_grace_period_ends_at' => 'datetime',
             'multi_branch_enabled' => 'boolean',
         ];

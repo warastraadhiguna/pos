@@ -635,6 +635,103 @@ class SaleServiceTest extends TestCase
     }
 
     /**
+     * Angka acuan yang SAMA dipakai
+     * `pos_mobile/test/domain/models/sale_discount_test.dart` (Flutter) --
+     * kedua sisi diverifikasi terhadap hasil identik untuk input yang sama,
+     * membuktikan rumus alokasi (bcmul skala tinggi lalu SATU bcdiv, bukan
+     * bcdiv-lalu-bcmul dua langkah yang membuang presisi) benar-benar
+     * senada, bukan cuma "kelihatan mirip".
+     */
+    public function test_percentage_discount_allocates_proportionally_to_subtotal_and_tax(): void
+    {
+        $this->assertTrue(CompanySetting::current()->ppn_active);
+        CompanySetting::current()->update(['discount_enabled' => true]);
+
+        $taxRate = TaxRate::where('name', 'PPN 11%')->firstOrFail();
+        $product = Product::create(['name' => 'Produk Kena Pajak', 'sell_price' => 8000, 'tax_rate_id' => $taxRate->id]);
+
+        $sale = $this->sales->createSale([
+            'outlet_id' => $this->outlet->id,
+            'warehouse_id' => $this->warehouse->id,
+            'date' => '2026-08-30',
+            'discount_type' => 'percentage',
+            'discount_value' => 10,
+            'lines' => [['product_id' => $product->id, 'qty' => 1, 'unit_price' => 8000]],
+        ]);
+
+        $this->assertSame(0, bccomp($sale->discount_amount, '800.0000', 4));
+        $this->assertSame(0, bccomp($sale->subtotal, '6486.4864', 4));
+        $this->assertSame(0, bccomp($sale->tax_total, '713.5136', 4));
+        $this->assertSame(0, bccomp($sale->grand_total, '7200.0000', 4));
+        $this->assertSame(0, bccomp(bcadd($sale->subtotal, $sale->tax_total, 4), $sale->grand_total, 4));
+
+        // Jurnal ikut mengecil proporsional -- TANPA akun "Potongan
+        // Penjualan" baru, PPN Keluaran yang dijurnal SUDAH versi
+        // setelah-diskon (lihat rancangan fitur Diskon).
+        $journal = Journal::where('source_type', Sale::class)->where('source_id', $sale->id)->firstOrFail();
+        $lines = $journal->lines()->with('account')->get()->keyBy(fn (JournalLine $line) => $line->account->code);
+        $this->assertSame(0, bccomp($lines['1-1000']->debit, '7200.0000', 4));
+        $this->assertSame(0, bccomp($lines['4-1000']->credit, '6486.4864', 4));
+        $this->assertSame(0, bccomp($lines['2-1100']->credit, '713.5136', 4));
+        $this->assertJournalBalanced($journal);
+    }
+
+    public function test_amount_discount_exceeding_grand_total_is_clamped_not_negative(): void
+    {
+        CompanySetting::current()->update(['discount_enabled' => true]);
+
+        $product = Product::create(['name' => 'Kopi Tunai', 'sell_price' => 8000]);
+
+        $sale = $this->sales->createSale([
+            'outlet_id' => $this->outlet->id,
+            'warehouse_id' => $this->warehouse->id,
+            'date' => '2026-08-30',
+            'discount_type' => 'amount',
+            'discount_value' => 50000,
+            'lines' => [['product_id' => $product->id, 'qty' => 1, 'unit_price' => 8000]],
+        ]);
+
+        $this->assertSame(0, bccomp($sale->discount_amount, '8000.0000', 4));
+        $this->assertSame(0, bccomp($sale->subtotal, '0.0000', 4));
+        $this->assertSame(0, bccomp($sale->tax_total, '0.0000', 4));
+        $this->assertSame(0, bccomp($sale->grand_total, '0.0000', 4));
+    }
+
+    public function test_discount_is_rejected_when_the_feature_switch_is_off(): void
+    {
+        $this->assertFalse(CompanySetting::current()->discount_enabled);
+
+        $product = Product::create(['name' => 'Kopi Tunai', 'sell_price' => 8000]);
+
+        $this->expectException(\App\Exceptions\DiscountDisabledException::class);
+
+        $this->sales->createSale([
+            'outlet_id' => $this->outlet->id,
+            'warehouse_id' => $this->warehouse->id,
+            'date' => '2026-08-30',
+            'discount_type' => 'amount',
+            'discount_value' => 1000,
+            'lines' => [['product_id' => $product->id, 'qty' => 1, 'unit_price' => 8000]],
+        ]);
+    }
+
+    public function test_no_discount_fields_produces_null_type_and_zero_amount(): void
+    {
+        $product = Product::create(['name' => 'Kopi Tunai', 'sell_price' => 8000]);
+
+        $sale = $this->sales->createSale([
+            'outlet_id' => $this->outlet->id,
+            'warehouse_id' => $this->warehouse->id,
+            'date' => '2026-08-30',
+            'lines' => [['product_id' => $product->id, 'qty' => 1, 'unit_price' => 8000]],
+        ]);
+
+        $this->assertNull($sale->discount_type);
+        $this->assertSame(0, bccomp($sale->discount_amount, '0.0000', 4));
+        $this->assertSame(0, bccomp($sale->grand_total, '8000.0000', 4));
+    }
+
+    /**
      * unit_price/line_total sudah snapshot sejak awal (disimpan langsung,
      * tidak pernah dihitung ulang dari relasi) — product_name yang
      * ketinggalan. Test ini membuktikan nama produk ikut dibekukan di
