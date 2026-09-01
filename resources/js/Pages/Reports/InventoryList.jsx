@@ -83,12 +83,12 @@ export default function InventoryList({ items, warehouseId, warehouses, stockByW
 
             <div className="py-12">
                 <div className="mx-auto max-w-6xl space-y-4 sm:px-6 lg:px-8">
-                    <div className="flex items-center justify-between rounded-lg bg-white p-4 shadow-sm">
+                    <div className="flex flex-col gap-3 rounded-lg bg-white p-4 shadow-sm sm:flex-row sm:items-center sm:justify-between">
                         <p className="text-sm text-gray-500">
                             Stok & HPP rata-rata terkini tiap item. Item bertanda merah
                             berarti stoknya 0 atau minus — perlu dibeli.
                         </p>
-                        <div className="flex items-center gap-2">
+                        <div className="flex flex-wrap items-center gap-2">
                             {multiBranchEnabled && (
                                 <button
                                     type="button"

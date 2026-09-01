@@ -1,6 +1,6 @@
 import TextInput from '@/Components/TextInput';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
-import { Head, Link, router } from '@inertiajs/react';
+import { Head, router } from '@inertiajs/react';
 
 const formatRupiah = (value) => {
     const number = Number(value);
@@ -50,17 +50,8 @@ export default function BranchComparison({ start, end, salesByOutlet, incomeByOu
 
             <div className="py-12">
                 <div className="mx-auto max-w-5xl space-y-4 sm:px-6 lg:px-8">
-                    <div className="flex items-center justify-between rounded-lg bg-white p-4 shadow-sm">
-                        <div className="flex gap-4 text-sm">
-                            <Link href={route('laporan.penjualan')} className="text-gray-500 hover:text-gray-700">
-                                Laporan Penjualan
-                            </Link>
-                            <Link href={route('laporan.laba-rugi')} className="text-gray-500 hover:text-gray-700">
-                                Laba Rugi
-                            </Link>
-                            <span className="font-semibold text-primary">Perbandingan Cabang</span>
-                        </div>
-                        <div className="flex items-center gap-2">
+                    <div className="rounded-lg bg-white p-4 shadow-sm">
+                        <div className="flex flex-wrap items-center justify-end gap-2">
                             <label className="text-sm text-gray-600">Dari</label>
                             <TextInput type="date" value={start} onChange={(e) => changeRange('start', e.target.value)} />
                             <label className="text-sm text-gray-600">s/d</label>

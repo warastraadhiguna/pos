@@ -37,11 +37,11 @@ export default function SupplierPayableShow({ supplier, asOf, outstanding, notas
 
             <div className="py-12">
                 <div className="mx-auto max-w-4xl space-y-4 sm:px-6 lg:px-8">
-                    <div className="flex items-center justify-between rounded-lg bg-white p-4 shadow-sm">
+                    <div className="flex flex-col gap-3 rounded-lg bg-white p-4 shadow-sm sm:flex-row sm:items-center sm:justify-between">
                         <Link href={route('laporan.hutang')} className="text-sm text-gray-500 hover:text-gray-700">
                             ← Kembali ke Daftar Hutang
                         </Link>
-                        <div className="flex items-center gap-2">
+                        <div className="flex flex-wrap items-center gap-2">
                             <label className="text-sm text-gray-600">Per tanggal</label>
                             <TextInput type="date" value={asOf} onChange={changeDate} />
                         </div>

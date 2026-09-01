@@ -1,6 +1,6 @@
 import TextInput from '@/Components/TextInput';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
-import { Head, Link, router } from '@inertiajs/react';
+import { Head, router } from '@inertiajs/react';
 
 const formatRupiah = (value) => {
     const number = Number(value);
@@ -40,60 +40,8 @@ export default function BalanceSheet({ asOf, report, cashByOutlet, multiBranchEn
 
             <div className="py-12">
                 <div className="mx-auto max-w-4xl space-y-4 sm:px-6 lg:px-8">
-                    <div className="flex items-center justify-between rounded-lg bg-white p-4 shadow-sm">
-                        <div className="flex gap-4 text-sm">
-                            <Link
-                                href={route('laporan.neraca')}
-                                className="font-semibold text-primary"
-                            >
-                                Neraca
-                            </Link>
-                            <Link
-                                href={route('laporan.laba-rugi')}
-                                className="text-gray-500 hover:text-gray-700"
-                            >
-                                Laba Rugi
-                            </Link>
-                            <Link
-                                href={route('laporan.beban')}
-                                className="text-gray-500 hover:text-gray-700"
-                            >
-                                Beban Operasional
-                            </Link>
-                            <Link
-                                href={route('laporan.penjualan')}
-                                className="text-gray-500 hover:text-gray-700"
-                            >
-                                Penjualan
-                            </Link>
-                            <Link
-                                href={route('laporan.laba-produk')}
-                                className="text-gray-500 hover:text-gray-700"
-                            >
-                                Laba per Produk
-                            </Link>
-                            <Link
-                                href={route('laporan.ppn')}
-                                className="text-gray-500 hover:text-gray-700"
-                            >
-                                PPN
-                            </Link>
-                            <Link
-                                href={route('laporan.hutang')}
-                                className="text-gray-500 hover:text-gray-700"
-                            >
-                                Hutang Supplier
-                            </Link>
-                            {multiBranchEnabled && (
-                                <Link
-                                    href={route('laporan.perbandingan-cabang')}
-                                    className="text-gray-500 hover:text-gray-700"
-                                >
-                                    Perbandingan Cabang
-                                </Link>
-                            )}
-                        </div>
-                        <div className="flex items-center gap-2">
+                    <div className="rounded-lg bg-white p-4 shadow-sm">
+                        <div className="flex flex-wrap items-center justify-end gap-2">
                             <label className="text-sm text-gray-600">
                                 Per tanggal
                             </label>

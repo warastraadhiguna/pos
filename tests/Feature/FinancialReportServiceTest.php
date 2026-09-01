@@ -2,9 +2,28 @@
 
 namespace Tests\Feature;
 
+use App\Models\Account;
+use App\Models\Item;
 use App\Models\Outlet;
+use App\Models\Product;
+use App\Models\Supplier;
+use App\Models\Uom;
+use App\Models\Warehouse;
+use App\Services\BranchService;
+use App\Services\CashAccountService;
+use App\Services\CashTransferService;
+use App\Services\DraftSyncService;
+use App\Services\EquityTransactionService;
+use App\Services\ExpensePayableReportService;
+use App\Services\ExpensePaymentService;
+use App\Services\ExpenseService;
 use App\Services\FinancialReportService;
+use App\Services\FixedAssetService;
+use App\Services\InventoryService;
 use App\Services\PostingService;
+use App\Services\PurchaseService;
+use App\Services\SaleService;
+use App\Services\SupplierPaymentService;
 use Database\Seeders\FoundationSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -25,6 +44,29 @@ class FinancialReportServiceTest extends TestCase
 
         $this->posting = new PostingService();
         $this->reports = new FinancialReportService();
+    }
+
+    /**
+     * @return array{0: Item, 1: Supplier, 2: Warehouse}
+     */
+    private function makeWidgetItemAndSupplier(): array
+    {
+        $pcs = Uom::where('code', 'PCS')->firstOrFail();
+        $persediaanAccount = Account::where('code', '1-1200')->firstOrFail();
+
+        $item = Item::create([
+            'sku' => 'WIDGET-CF',
+            'name' => 'Widget Arus Kas',
+            'costing_type' => 'stocked',
+            'base_uom_id' => $pcs->id,
+            'purchase_uom_id' => $pcs->id,
+            'standard_cost' => 0,
+            'inventory_account_id' => $persediaanAccount->id,
+        ]);
+        $supplier = Supplier::create(['name' => 'Supplier Arus Kas']);
+        $warehouse = Warehouse::first();
+
+        return [$item, $supplier, $warehouse];
     }
 
     public function test_all_account_balances_includes_every_account_across_all_types_including_the_group_header(): void
@@ -355,5 +397,212 @@ class FinancialReportServiceTest extends TestCase
         $operationalCodes = collect($report['operational_expenses'])->pluck('code');
         $this->assertTrue($operationalCodes->contains('5-3000'));
         $this->assertFalse($operationalCodes->contains('5-1000'));
+    }
+
+    public function test_cash_flow_classifies_a_cash_sale_as_an_operating_receipt(): void
+    {
+        $sales = new SaleService(
+            new InventoryService(),
+            $this->posting,
+            new CashAccountService(),
+            new DraftSyncService(new BranchService()),
+        );
+        $outlet = Outlet::first();
+        $warehouse = Warehouse::first();
+        $product = Product::create(['name' => 'Kopi Arus Kas', 'sell_price' => 20000]);
+
+        $sales->createSale([
+            'outlet_id' => $outlet->id,
+            'warehouse_id' => $warehouse->id,
+            'date' => '2026-07-10',
+            'payment_method' => 'cash',
+            'lines' => [['product_id' => $product->id, 'qty' => 1, 'unit_price' => 20000]],
+        ]);
+
+        $report = $this->reports->cashFlowStatement('2026-07-01', '2026-07-31');
+
+        $this->assertSame(0, bccomp($report['total_operating'], '20000', 4));
+        $this->assertSame(0, bccomp($report['total_investing'], '0', 4));
+        $this->assertSame(0, bccomp($report['total_financing'], '0', 4));
+        $rows = collect($report['operating'])->keyBy('label');
+        $this->assertSame(0, bccomp($rows['Penerimaan dari Penjualan']['balance'], '20000', 4));
+        $this->assertTrue($report['is_balanced']);
+    }
+
+    public function test_cash_flow_separates_cash_purchase_from_supplier_debt_payment(): void
+    {
+        [$item, $supplier, $warehouse] = $this->makeWidgetItemAndSupplier();
+        $purchases = new PurchaseService(new InventoryService(), $this->posting, new CashAccountService());
+        $payments = new SupplierPaymentService($this->posting, new CashAccountService());
+        $pcs = Uom::where('code', 'PCS')->firstOrFail();
+
+        // Pembelian TUNAI langsung -- credit Kas langsung, tidak lewat Hutang Usaha.
+        $poCash = $purchases->createPurchaseOrder([
+            'supplier_id' => $supplier->id,
+            'warehouse_id' => $warehouse->id,
+            'date' => '2026-07-05',
+            'lines' => [['item_id' => $item->id, 'qty' => '5', 'purchase_uom_id' => $pcs->id, 'unit_price' => '10000']],
+        ]);
+        $purchases->receiveGoods($poCash, [$poCash->lines->first()->id => '5'], '2026-07-05', 'cash');
+
+        // Pembelian KREDIT, lalu dilunasi terpisah -- harus muncul sebagai
+        // "Pembayaran Hutang Usaha", BUKAN "Pembayaran Pembelian Tunai".
+        $poCredit = $purchases->createPurchaseOrder([
+            'supplier_id' => $supplier->id,
+            'warehouse_id' => $warehouse->id,
+            'date' => '2026-07-06',
+            'lines' => [['item_id' => $item->id, 'qty' => '3', 'purchase_uom_id' => $pcs->id, 'unit_price' => '10000']],
+        ]);
+        $receiptCredit = $purchases->receiveGoods($poCredit, [$poCredit->lines->first()->id => '3'], '2026-07-06', 'credit');
+        $payments->recordPayment([
+            'outlet_id' => Outlet::first()->id,
+            'supplier_id' => $supplier->id,
+            'date' => '2026-07-15',
+            'amount' => 30000,
+            'allocations' => [['goods_receipt_id' => $receiptCredit->id, 'amount' => 30000]],
+        ]);
+
+        $report = $this->reports->cashFlowStatement('2026-07-01', '2026-07-31');
+        $rows = collect($report['operating'])->keyBy('label');
+
+        // Kredit (bukan kas) -- pembelian kredit sendiri TIDAK PERNAH
+        // menyentuh akun Kas/Bank, jadi cuma pelunasannya yang muncul.
+        $this->assertSame(0, bccomp($rows['Pembayaran Pembelian Tunai']['balance'], '-50000', 4));
+        $this->assertSame(0, bccomp($rows['Pembayaran Hutang Usaha (Supplier)']['balance'], '-30000', 4));
+        $this->assertSame(0, bccomp($report['total_operating'], '-80000', 4));
+    }
+
+    public function test_cash_flow_classifies_fixed_asset_purchase_as_investing_and_equity_as_financing(): void
+    {
+        $fixedAssets = new FixedAssetService($this->posting, new CashAccountService());
+        $equity = new EquityTransactionService($this->posting, new CashAccountService());
+        $outlet = Outlet::first();
+
+        $fixedAssets->recordPurchase([
+            'outlet_id' => $outlet->id,
+            'name' => 'Kulkas Arus Kas',
+            'category' => 'Peralatan',
+            'purchase_date' => '2026-07-01',
+            'acquisition_cost' => 5000000,
+            'residual_value' => 0,
+            'useful_life_months' => 48,
+            'payment_method' => 'cash',
+        ]);
+        $equity->recordModalDeposit([
+            'outlet_id' => $outlet->id,
+            'date' => '2026-07-02',
+            'amount' => 8000000,
+            'description' => 'Setoran awal',
+        ]);
+        $equity->recordPriveWithdrawal([
+            'outlet_id' => $outlet->id,
+            'date' => '2026-07-03',
+            'amount' => 1000000,
+            'description' => 'Keperluan pribadi',
+        ]);
+
+        $report = $this->reports->cashFlowStatement('2026-07-01', '2026-07-31');
+
+        $investingRows = collect($report['investing'])->keyBy('label');
+        $this->assertSame(0, bccomp($investingRows['Pembelian Aset Tetap Tunai']['balance'], '-5000000', 4));
+        $this->assertSame(0, bccomp($report['total_investing'], '-5000000', 4));
+
+        $financingRows = collect($report['financing'])->keyBy('label');
+        $this->assertSame(0, bccomp($financingRows['Setoran Modal Pemilik']['balance'], '8000000', 4));
+        $this->assertSame(0, bccomp($financingRows['Pengambilan Prive']['balance'], '-1000000', 4));
+        $this->assertSame(0, bccomp($report['total_financing'], '7000000', 4));
+    }
+
+    /**
+     * Kedua kaki CashTransfer sama-sama akun Kas/Bank internal (Kas ->
+     * Bank) -- bukan arus kas EKSTERNAL, jadi harus SAMA SEKALI tidak
+     * muncul di kategori manapun, bukan di-net jadi nol secara kebetulan.
+     */
+    public function test_cash_flow_excludes_cash_transfer_entirely(): void
+    {
+        $transfers = new CashTransferService($this->posting, new CashAccountService());
+        $outlet = Outlet::first();
+
+        $transfers->recordTransfer([
+            'outlet_id' => $outlet->id,
+            'date' => '2026-07-10',
+            'from_account_code' => '1-1000',
+            'to_account_code' => '1-1100',
+            'amount' => 2000000,
+            'memo' => 'Setor ke bank',
+        ]);
+
+        $report = $this->reports->cashFlowStatement('2026-07-01', '2026-07-31');
+
+        $this->assertSame([], $report['operating']);
+        $this->assertSame([], $report['investing']);
+        $this->assertSame([], $report['financing']);
+        $this->assertSame(0, bccomp($report['net_change'], '0', 4));
+        // Saldo kas GABUNGAN (Kas+Bank) tidak berubah oleh transfer
+        // internal -- awal & akhir harus tetap sama persis.
+        $this->assertSame(0, bccomp($report['beginning_cash'], $report['ending_cash'], 4));
+        $this->assertTrue($report['is_balanced']);
+    }
+
+    /**
+     * Skenario gabungan lintas SEMUA jenis aktivitas dalam satu laporan --
+     * membuktikan Saldo Awal + Kenaikan Bersih benar-benar sama dengan
+     * saldo Kas/Bank sungguhan (is_balanced), bukan cuma benar per jenis
+     * transaksi yang diuji terpisah-pisah di atas.
+     */
+    public function test_cash_flow_reconciles_beginning_plus_net_change_to_the_actual_ending_balance(): void
+    {
+        // Saldo AWAL dari transaksi bulan SEBELUMNYA (Juni) -- harus ikut
+        // terbawa sebagai beginning_cash Juli, walau di luar rentang laporan.
+        $this->posting->post(
+            lines: [
+                ['account' => '1-1000', 'debit' => 1000000, 'credit' => 0],
+                ['account' => '4-1000', 'debit' => 0, 'credit' => 1000000],
+            ],
+            date: '2026-06-15',
+            source: Outlet::first(),
+            memo: 'Penjualan Juni',
+        );
+
+        $expenses = new ExpenseService($this->posting, new CashAccountService());
+        $expenses->recordExpense([
+            'outlet_id' => Outlet::first()->id,
+            'expense_account_id' => Account::where('code', '5-3200')->firstOrFail()->id,
+            'date' => '2026-07-05',
+            'amount' => 400000,
+            'payment_method' => 'cash',
+            'description' => 'Gaji Juli',
+        ]);
+
+        $report = $this->reports->cashFlowStatement('2026-07-01', '2026-07-31');
+
+        $this->assertSame(0, bccomp($report['beginning_cash'], '1000000', 4));
+        $this->assertSame(0, bccomp($report['total_operating'], '-400000', 4));
+        $this->assertSame(0, bccomp($report['ending_cash'], '600000', 4));
+        $this->assertSame(0, bccomp($report['ending_cash'], $report['actual_ending_cash'], 4));
+        $this->assertTrue($report['is_balanced']);
+    }
+
+    public function test_cash_flow_for_a_range_without_any_transactions_still_carries_over_the_prior_balance(): void
+    {
+        $this->posting->post(
+            lines: [
+                ['account' => '1-1000', 'debit' => 750000, 'credit' => 0],
+                ['account' => '4-1000', 'debit' => 0, 'credit' => 750000],
+            ],
+            date: '2026-06-01',
+            source: Outlet::first(),
+            memo: 'Penjualan Juni',
+        );
+
+        $report = $this->reports->cashFlowStatement('2026-08-01', '2026-08-31');
+
+        $this->assertSame([], $report['operating']);
+        $this->assertSame([], $report['investing']);
+        $this->assertSame([], $report['financing']);
+        $this->assertSame(0, bccomp($report['net_change'], '0', 4));
+        $this->assertSame(0, bccomp($report['beginning_cash'], '750000', 4));
+        $this->assertSame(0, bccomp($report['ending_cash'], '750000', 4));
+        $this->assertTrue($report['is_balanced']);
     }
 }

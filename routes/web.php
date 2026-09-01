@@ -245,6 +245,7 @@ Route::middleware(['auth', 'verified', 'permission:laporan.view'])->prefix('lapo
     Route::get('/neraca', [FinancialReportController::class, 'balanceSheet'])->name('neraca');
     Route::get('/laba-rugi', [FinancialReportController::class, 'incomeStatement'])->name('laba-rugi');
     Route::get('/beban', [FinancialReportController::class, 'expenseReport'])->name('beban');
+    Route::get('/arus-kas', [FinancialReportController::class, 'cashFlow'])->name('arus-kas');
     Route::get('/ppn', [TaxReportController::class, 'ppn'])->name('ppn');
     Route::get('/penjualan', [SalesReportController::class, 'index'])->name('penjualan');
     Route::get('/perbandingan-cabang', [SalesReportController::class, 'compare'])->name('perbandingan-cabang');

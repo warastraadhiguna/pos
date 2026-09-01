@@ -57,6 +57,24 @@ class FinancialReportController extends Controller
     }
 
     /**
+     * Arus Kas -- pola SAMA neraca (TIDAK menerima filter cabang): lihat
+     * docblock FinancialReportService::cashFlowStatement() untuk alasan
+     * (laporan arus kas selalu tingkat entitas, kas bisa berpindah cabang
+     * lewat CashTransfer).
+     */
+    public function cashFlow(Request $request): Response
+    {
+        $start = $request->input('start', now()->startOfMonth()->toDateString());
+        $end = $request->input('end', now()->toDateString());
+
+        return Inertia::render('Reports/CashFlow', [
+            'start' => $start,
+            'end' => $end,
+            'report' => $this->reports->cashFlowStatement($start, $end),
+        ]);
+    }
+
+    /**
      * Ringkasan beban operasional per akun untuk suatu periode -- murni
      * menyajikan ulang `operational_expenses`/`total_operational_expense`
      * yang sudah dihitung oleh incomeStatement() (bucket yang sama dipakai

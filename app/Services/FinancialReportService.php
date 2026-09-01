@@ -3,12 +3,20 @@
 namespace App\Services;
 
 use App\Models\Account;
+use App\Models\CashTransfer;
+use App\Models\EquityTransaction;
 use App\Models\Expense;
+use App\Models\ExpensePayment;
+use App\Models\FixedAsset;
+use App\Models\FixedAssetPayment;
+use App\Models\GoodsReceipt;
 use App\Models\JournalLine;
 use App\Models\Outlet;
 use App\Models\Sale;
 use App\Models\StockOpname;
+use App\Models\SupplierPayment;
 use DateTimeInterface;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 
 class FinancialReportService
@@ -179,6 +187,165 @@ class FinancialReportService
         }
 
         return false;
+    }
+
+    /**
+     * Cash flow statement (metode LANGSUNG) for a date range -- setiap
+     * baris `journal_lines` yang menyentuh akun Kas/Bank (anak grup "1-1",
+     * lihat cashByOutlet()) dikelompokkan lewat `journals.source_type` (+
+     * kolom `type` pada EquityTransaction untuk pisah Modal/Prive) jadi
+     * tiga aktivitas standar. Metode LANGSUNG dipilih (bukan tidak
+     * langsung dari laba bersih) karena setiap jurnal di sistem ini SUDAH
+     * eksplisit per-akun -- tidak perlu rekonsiliasi non-cash items yang
+     * rawan meleset.
+     *
+     * `GoodsReceipt`/`Expense`/`FixedAsset` yang `payment_method='credit'`
+     * TIDAK PERNAH menyentuh akun Kas/Bank sama sekali (kreditnya ke
+     * Hutang Usaha/Hutang Beban/Hutang Lain-lain) -- jadi baris jurnalnya
+     * otomatis tidak pernah lolos filter `whereIn('account_id', ...)` di
+     * bawah, TANPA perlu pengecekan `payment_method` eksplisit di sini.
+     *
+     * `CashTransfer` DIKECUALIKAN sepenuhnya (bukan di-net) -- kedua
+     * kakinya sama-sama akun Kas/Bank internal (mis. Kas -> Bank), jadi
+     * bukan arus kas EKSTERNAL sama sekali (lihat docblock
+     * `CashTransferService`).
+     *
+     * `StockOpname`/`DepreciationEntry` tidak pernah menyentuh akun
+     * Kas/Bank (lihat SaleService/StockOpnameService/DepreciationService)
+     * -- otomatis tidak pernah muncul di sini, tidak perlu penanganan
+     * khusus.
+     *
+     * Jaring pengaman: `source_type` yang TIDAK dikenali (mis. jenis
+     * transaksi baru di masa depan yang lupa dipetakan di
+     * classifyCashLine()) tetap dikumpulkan sebagai baris "Lainnya" --
+     * bukan dibuang diam-diam -- supaya `is_balanced` di bawah tetap jadi
+     * jaring pengaman yang jujur (kalau ada yang kelewat DIKLASIFIKASIKAN,
+     * labelnya generik tapi TOTALNYA tetap benar; hanya kalau ada baris
+     * yang kelewat DIQUERY sama sekali -- seharusnya mustahil selama
+     * source_type-nya benar-benar menyentuh akun Kas/Bank -- `is_balanced`
+     * akan false).
+     *
+     * TIDAK menerima `$outletId` (pola sama balanceSheet(), BUKAN
+     * incomeStatement()) -- laporan arus kas adalah laporan tingkat
+     * ENTITAS di standar akuntansi manapun, bukan per-segmen, dan kas itu
+     * sendiri bisa berpindah cabang lewat CashTransfer sehingga "arus kas
+     * milik cabang X" tidak selalu bermakna jelas.
+     *
+     * @return array{
+     *     start: DateTimeInterface|string, end: DateTimeInterface|string,
+     *     beginning_cash: string,
+     *     operating: array, total_operating: string,
+     *     investing: array, total_investing: string,
+     *     financing: array, total_financing: string,
+     *     net_change: string, ending_cash: string, actual_ending_cash: string,
+     *     is_balanced: bool,
+     * }
+     */
+    public function cashFlowStatement(DateTimeInterface|string $startDate, DateTimeInterface|string $endDate): array
+    {
+        $cashAccountIds = $this->cashAccountIds();
+
+        $beginningCash = $this->sumCashBalance($cashAccountIds, Carbon::parse($startDate)->subDay()->toDateString());
+        $actualEndingCash = $this->sumCashBalance($cashAccountIds, $endDate);
+
+        $lines = JournalLine::query()
+            ->join('journals', 'journals.id', '=', 'journal_lines.journal_id')
+            ->whereIn('journal_lines.account_id', $cashAccountIds)
+            ->where('journals.date', '>=', $startDate)
+            ->where('journals.date', '<=', $endDate)
+            ->where('journals.source_type', '!=', CashTransfer::class)
+            ->get(['journal_lines.debit', 'journal_lines.credit', 'journals.source_type', 'journals.source_id']);
+
+        $equityTypeById = EquityTransaction::whereIn(
+            'id',
+            $lines->where('source_type', EquityTransaction::class)->pluck('source_id')->unique(),
+        )->pluck('type', 'id');
+
+        $grouped = [];
+        foreach ($lines as $line) {
+            $classification = $this->classifyCashLine($line->source_type, (int) $line->source_id, $equityTypeById);
+            $key = $classification['category'].'|'.$classification['label'];
+            $net = bcsub((string) $line->debit, (string) $line->credit, self::SCALE);
+
+            $grouped[$key] ??= ['category' => $classification['category'], 'label' => $classification['label'], 'balance' => '0'];
+            $grouped[$key]['balance'] = bcadd($grouped[$key]['balance'], $net, self::SCALE);
+        }
+
+        $byCategory = fn (string $category) => array_values(array_filter($grouped, fn (array $row) => $row['category'] === $category));
+        $operating = $byCategory('operating');
+        $investing = $byCategory('investing');
+        $financing = $byCategory('financing');
+
+        $totalOperating = $this->sumBalances($operating);
+        $totalInvesting = $this->sumBalances($investing);
+        $totalFinancing = $this->sumBalances($financing);
+        $netChange = bcadd(bcadd($totalOperating, $totalInvesting, self::SCALE), $totalFinancing, self::SCALE);
+        $endingCash = bcadd($beginningCash, $netChange, self::SCALE);
+
+        return [
+            'start' => $startDate,
+            'end' => $endDate,
+            'beginning_cash' => $beginningCash,
+            'operating' => $operating,
+            'total_operating' => $totalOperating,
+            'investing' => $investing,
+            'total_investing' => $totalInvesting,
+            'financing' => $financing,
+            'total_financing' => $totalFinancing,
+            'net_change' => $netChange,
+            'ending_cash' => $endingCash,
+            'actual_ending_cash' => $actualEndingCash,
+            'is_balanced' => bccomp($endingCash, $actualEndingCash, self::SCALE) === 0,
+        ];
+    }
+
+    /**
+     * @return array{category: 'operating'|'investing'|'financing', label: string}
+     */
+    private function classifyCashLine(string $sourceType, int $sourceId, Collection $equityTypeById): array
+    {
+        return match ($sourceType) {
+            Sale::class => ['category' => 'operating', 'label' => 'Penerimaan dari Penjualan'],
+            GoodsReceipt::class => ['category' => 'operating', 'label' => 'Pembayaran Pembelian Tunai'],
+            SupplierPayment::class => ['category' => 'operating', 'label' => 'Pembayaran Hutang Usaha (Supplier)'],
+            Expense::class => ['category' => 'operating', 'label' => 'Pembayaran Beban Operasional Tunai'],
+            ExpensePayment::class => ['category' => 'operating', 'label' => 'Pembayaran Hutang Beban'],
+            FixedAsset::class => ['category' => 'investing', 'label' => 'Pembelian Aset Tetap Tunai'],
+            FixedAssetPayment::class => ['category' => 'investing', 'label' => 'Pembayaran Hutang Aset Tetap'],
+            EquityTransaction::class => $equityTypeById->get($sourceId) === 'modal'
+                ? ['category' => 'financing', 'label' => 'Setoran Modal Pemilik']
+                : ['category' => 'financing', 'label' => 'Pengambilan Prive'],
+            default => ['category' => 'operating', 'label' => 'Lainnya'],
+        };
+    }
+
+    /**
+     * @return Collection<int, int>
+     */
+    private function cashAccountIds(): Collection
+    {
+        $kasBankGroupId = Account::where('code', '1-1')->firstOrFail()->id;
+
+        return Account::where('parent_id', $kasBankGroupId)->pluck('id');
+    }
+
+    /**
+     * Saldo GABUNGAN seluruh akun Kas/Bank (bukan per-akun) per tanggal --
+     * reuse accountBalances() yang sama dipakai balanceSheet(), cuma
+     * dijumlahkan lintas akun kas. Kas/Bank keduanya akun debit-normal,
+     * jadi rumusnya sama seperti balanceFor() untuk tipe asset.
+     */
+    private function sumCashBalance(Collection $cashAccountIds, DateTimeInterface|string $upToDate): string
+    {
+        $balances = $this->accountBalances(upToDate: $upToDate);
+
+        return $cashAccountIds->reduce(function (string $carry, int $accountId) use ($balances) {
+            $row = $balances->get($accountId);
+            $debit = (string) ($row?->total_debit ?? '0');
+            $credit = (string) ($row?->total_credit ?? '0');
+
+            return bcadd($carry, bcsub($debit, $credit, self::SCALE), self::SCALE);
+        }, '0');
     }
 
     /**

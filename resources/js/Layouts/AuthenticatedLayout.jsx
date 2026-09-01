@@ -341,6 +341,13 @@ const navGroups = [
                 permission: "laporan.view",
             },
             {
+                name: "Arus Kas",
+                href: "laporan.arus-kas",
+                match: "laporan.arus-kas",
+                icon: icons.labaRugi,
+                permission: "laporan.view",
+            },
+            {
                 name: "Penjualan",
                 href: "laporan.penjualan",
                 match: "laporan.penjualan",
