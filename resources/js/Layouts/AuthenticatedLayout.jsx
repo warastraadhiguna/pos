@@ -1,7 +1,7 @@
 import BrandMark from "@/Components/BrandMark";
 import Dropdown from "@/Components/Dropdown";
 import { Link, usePage } from "@inertiajs/react";
-import { useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 
 // Sama sumbernya dengan judul tab browser (lihat app.jsx) -- APP_NAME di
 // .env, diteruskan Vite sebagai VITE_APP_NAME. Dipakai di sebelah logo
@@ -610,6 +610,33 @@ function SidebarNav({
     collapsed = false,
     onNavigate = null,
 }) {
+    const navRef = useRef(null);
+
+    // Tiap halaman membungkus AuthenticatedLayout-nya SENDIRI (bukan
+    // Inertia persistent layout) -- <nav> ini ikut di-mount ULANG dari nol setiap kasir
+    // pindah halaman, jadi scrollTop-nya otomatis balik ke 0 walau isi
+    // menunya tidak berubah. Disimpan & dipulihkan lewat sessionStorage,
+    // pola sama localStorage("sidebar-collapsed") di bawah -- supaya
+    // posisi scroll TERASA bertahan walau DOM-nya sebenarnya baru.
+    // useLayoutEffect (bukan useEffect) supaya scrollTop dipulihkan
+    // SEBELUM browser sempat menggambar frame pertama di posisi 0,
+    // menghindari kedipan "lompat ke atas dulu, baru turun lagi".
+    useLayoutEffect(() => {
+        const saved = sessionStorage.getItem("sidebar-scroll-top");
+        if (saved !== null && navRef.current) {
+            navRef.current.scrollTop = Number(saved);
+        }
+    }, []);
+
+    const handleScroll = () => {
+        if (navRef.current) {
+            sessionStorage.setItem(
+                "sidebar-scroll-top",
+                String(navRef.current.scrollTop),
+            );
+        }
+    };
+
     const visibleGroups = navGroups
         .map((group) => ({
             ...group,
@@ -622,7 +649,11 @@ function SidebarNav({
         .filter((group) => group.items.length > 0);
 
     return (
-        <nav className="min-h-0 flex-1 space-y-6 overflow-y-auto overscroll-contain px-3 pb-8">
+        <nav
+            ref={navRef}
+            onScroll={handleScroll}
+            className="min-h-0 flex-1 space-y-6 overflow-y-auto overscroll-contain px-3 pb-8"
+        >
             {visibleGroups.map((group) => (
                 <div key={group.label ?? "top"}>
                     {group.label && !collapsed && (
