@@ -256,4 +256,71 @@ class ProductControllerTest extends TestCase
         $response->assertSessionHasErrors(['product_category_id']);
         $this->assertSame(0, Product::count());
     }
+
+    public function test_index_sorts_by_name_by_default(): void
+    {
+        $this->actingAsAuthorizedUser();
+        $this->post(route('master.products.store'), $this->baseProductPayload(['name' => 'Zebra Cola']));
+        $this->post(route('master.products.store'), $this->baseProductPayload(['name' => 'Apel Jus']));
+        $this->post(route('master.products.store'), $this->baseProductPayload(['name' => 'Mangga Jus']));
+
+        $response = $this->get(route('master.products.index'));
+
+        $response->assertInertia(fn ($page) => $page
+            ->component('Master/Products/Index')
+            ->where('products.data.0.name', 'Apel Jus')
+            ->where('products.data.1.name', 'Mangga Jus')
+            ->where('products.data.2.name', 'Zebra Cola'),
+        );
+    }
+
+    public function test_index_paginates_at_twenty_per_page(): void
+    {
+        $this->actingAsAuthorizedUser();
+        for ($i = 1; $i <= 25; $i++) {
+            $this->post(route('master.products.store'), $this->baseProductPayload([
+                'name' => 'Produk '.str_pad((string) $i, 3, '0', STR_PAD_LEFT),
+            ]));
+        }
+
+        $firstPage = $this->get(route('master.products.index'));
+        $firstPage->assertInertia(fn ($page) => $page
+            ->has('products.data', 20)
+            ->where('products.total', 25)
+            ->where('products.current_page', 1)
+            ->where('products.last_page', 2),
+        );
+
+        $secondPage = $this->get(route('master.products.index', ['page' => 2]));
+        $secondPage->assertInertia(fn ($page) => $page
+            ->has('products.data', 5)
+            ->where('products.current_page', 2),
+        );
+    }
+
+    public function test_index_search_filters_by_name_or_barcode(): void
+    {
+        $this->actingAsAuthorizedUser();
+        $this->post(route('master.products.store'), $this->baseProductPayload(['name' => 'Kopi Arabika', 'barcode' => '8991001']));
+        $this->post(route('master.products.store'), $this->baseProductPayload(['name' => 'Teh Hijau', 'barcode' => '8992002']));
+        $this->post(route('master.products.store'), $this->baseProductPayload(['name' => 'Susu UHT', 'barcode' => '8991003']));
+
+        // Cocok lewat NAMA (mengandung "Kopi").
+        $byName = $this->get(route('master.products.index', ['q' => 'Kopi']));
+        $byName->assertInertia(fn ($page) => $page
+            ->has('products.data', 1)
+            ->where('products.data.0.name', 'Kopi Arabika'),
+        );
+
+        // Cocok lewat BARCODE (mengandung "8991"), dua produk berbeda nama.
+        $byBarcode = $this->get(route('master.products.index', ['q' => '8991']));
+        $byBarcode->assertInertia(fn ($page) => $page
+            ->has('products.data', 2)
+            ->where('products.total', 2),
+        );
+
+        // Tidak cocok apa pun -> daftar kosong, bukan error.
+        $noMatch = $this->get(route('master.products.index', ['q' => 'Nonexistent']));
+        $noMatch->assertInertia(fn ($page) => $page->where('products.total', 0));
+    }
 }

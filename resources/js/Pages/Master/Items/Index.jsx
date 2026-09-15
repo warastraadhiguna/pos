@@ -1,9 +1,36 @@
 import DangerButton from '@/Components/DangerButton';
+import Pagination from '@/Components/Pagination';
 import PrimaryButton from '@/Components/PrimaryButton';
+import TextInput from '@/Components/TextInput';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import { Head, Link, router } from '@inertiajs/react';
+import { useEffect, useRef, useState } from 'react';
 
-export default function Index({ items }) {
+export default function Index({ items, search }) {
+    const [query, setQuery] = useState(search ?? '');
+    const debounceRef = useRef(null);
+    // `search` (prop dari server) sengaja TIDAK dijadikan dependency --
+    // ini murni menghindari request pencarian pertama kali halaman dimuat
+    // (nilai awalnya sendiri berasal dari server, mengirimkannya balik
+    // cuma buang-buang request). Perubahan URL lewat Pagination/back-
+    // forward browser tetap tersinkron lewat Inertia sendiri (re-render
+    // props baru), bukan lewat effect ini.
+    useEffect(() => {
+        return () => clearTimeout(debounceRef.current);
+    }, []);
+
+    const handleSearchChange = (value) => {
+        setQuery(value);
+        clearTimeout(debounceRef.current);
+        debounceRef.current = setTimeout(() => {
+            router.get(
+                route('master.items.index'),
+                { q: value },
+                { preserveState: true, replace: true },
+            );
+        }, 300);
+    };
+
     const destroy = (item) => {
         if (confirm(`Hapus item "${item.name}"?`)) {
             router.delete(route('master.items.destroy', item.id));
@@ -27,7 +54,14 @@ export default function Index({ items }) {
                         Item bukan yang dijual langsung ke pelanggan — Item dirangkai jadi Produk lewat
                         resep (BOM) di halaman Produk.
                     </p>
-                    <div className="flex justify-end">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                        <TextInput
+                            type="search"
+                            value={query}
+                            onChange={(e) => handleSearchChange(e.target.value)}
+                            placeholder="Cari SKU atau nama..."
+                            className="w-full max-w-xs"
+                        />
                         <Link href={route('master.items.create')}>
                             <PrimaryButton>Tambah Item</PrimaryButton>
                         </Link>
@@ -59,7 +93,7 @@ export default function Index({ items }) {
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-gray-200 bg-white">
-                                {items.map((item) => (
+                                {items.data.map((item) => (
                                     <tr key={item.id}>
                                         <td className="whitespace-nowrap px-6 py-4 text-sm font-medium text-gray-900">
                                             {item.sku}
@@ -110,19 +144,30 @@ export default function Index({ items }) {
                                         </td>
                                     </tr>
                                 ))}
-                                {items.length === 0 && (
+                                {items.data.length === 0 && (
                                     <tr>
                                         <td
                                             colSpan={7}
                                             className="px-6 py-4 text-center text-sm text-gray-500"
                                         >
-                                            Belum ada item.
+                                            {query
+                                                ? 'Tidak ada item yang cocok dengan pencarian.'
+                                                : 'Belum ada item.'}
                                         </td>
                                     </tr>
                                 )}
                             </tbody>
                         </table>
                     </div>
+
+                    {items.total > 0 && (
+                        <div className="space-y-2">
+                            <p className="text-center text-sm text-gray-500">
+                                Menampilkan {items.from}–{items.to} dari {items.total} item
+                            </p>
+                            <Pagination links={items.links} />
+                        </div>
+                    )}
                 </div>
             </div>
         </AuthenticatedLayout>

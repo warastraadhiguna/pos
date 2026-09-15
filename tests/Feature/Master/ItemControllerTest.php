@@ -107,4 +107,75 @@ class ItemControllerTest extends TestCase
         $response->assertSessionHasErrors(['item_category_id']);
         $this->assertSame(0, Item::count());
     }
+
+    public function test_index_sorts_by_name_by_default(): void
+    {
+        $this->actingAsAuthorizedUser();
+        $this->post(route('master.items.store'), $this->baseItemPayload(['sku' => 'SKU-Z', 'name' => 'Zebra']));
+        $this->post(route('master.items.store'), $this->baseItemPayload(['sku' => 'SKU-A', 'name' => 'Apel']));
+        $this->post(route('master.items.store'), $this->baseItemPayload(['sku' => 'SKU-M', 'name' => 'Mangga']));
+
+        // SKU sengaja TIDAK urut alfabet sama dengan nama (Z, A, M) --
+        // membuktikan urutan yang benar-benar dipakai adalah NAMA, bukan
+        // kebetulan sama dengan urutan SKU/insert.
+        $response = $this->get(route('master.items.index'));
+
+        $response->assertInertia(fn ($page) => $page
+            ->component('Master/Items/Index')
+            ->where('items.data.0.name', 'Apel')
+            ->where('items.data.1.name', 'Mangga')
+            ->where('items.data.2.name', 'Zebra'),
+        );
+    }
+
+    public function test_index_paginates_at_twenty_per_page(): void
+    {
+        $this->actingAsAuthorizedUser();
+        for ($i = 1; $i <= 25; $i++) {
+            $this->post(route('master.items.store'), $this->baseItemPayload([
+                'sku' => 'SKU-'.str_pad((string) $i, 3, '0', STR_PAD_LEFT),
+                'name' => 'Item '.str_pad((string) $i, 3, '0', STR_PAD_LEFT),
+            ]));
+        }
+
+        $firstPage = $this->get(route('master.items.index'));
+        $firstPage->assertInertia(fn ($page) => $page
+            ->has('items.data', 20)
+            ->where('items.total', 25)
+            ->where('items.current_page', 1)
+            ->where('items.last_page', 2),
+        );
+
+        $secondPage = $this->get(route('master.items.index', ['page' => 2]));
+        $secondPage->assertInertia(fn ($page) => $page
+            ->has('items.data', 5)
+            ->where('items.current_page', 2),
+        );
+    }
+
+    public function test_index_search_filters_by_sku_or_name(): void
+    {
+        $this->actingAsAuthorizedUser();
+        $this->post(route('master.items.store'), $this->baseItemPayload(['sku' => 'KOPI-001', 'name' => 'Kopi Arabika']));
+        $this->post(route('master.items.store'), $this->baseItemPayload(['sku' => 'TEH-001', 'name' => 'Teh Hijau']));
+        $this->post(route('master.items.store'), $this->baseItemPayload(['sku' => 'KOPI-002', 'name' => 'Susu UHT']));
+
+        // Cocok lewat SKU (mengandung "KOPI").
+        $bySku = $this->get(route('master.items.index', ['q' => 'KOPI']));
+        $bySku->assertInertia(fn ($page) => $page
+            ->has('items.data', 2)
+            ->where('items.total', 2),
+        );
+
+        // Cocok lewat NAMA (mengandung "Hijau"), bukan SKU.
+        $byName = $this->get(route('master.items.index', ['q' => 'Hijau']));
+        $byName->assertInertia(fn ($page) => $page
+            ->has('items.data', 1)
+            ->where('items.data.0.name', 'Teh Hijau'),
+        );
+
+        // Tidak cocok apa pun -> daftar kosong, bukan error.
+        $noMatch = $this->get(route('master.items.index', ['q' => 'Nonexistent']));
+        $noMatch->assertInertia(fn ($page) => $page->where('items.total', 0));
+    }
 }

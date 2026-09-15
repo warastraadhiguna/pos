@@ -17,10 +17,32 @@ use Inertia\Response;
 
 class ItemController extends Controller
 {
-    public function index(): Response
+    /**
+     * `q` mencari SKU maupun nama (field yang sama dipakai search() di
+     * bawah, picker Item di form Produk) -- default urut nama (bukan SKU
+     * seperti sebelumnya) supaya katalog besar tetap gampang di-scan
+     * visual. `withQueryString()` menempelkan `q` yang sama ke setiap link
+     * halaman di paginator, jadi mencari lalu pindah halaman tidak pernah
+     * kehilangan filter yang sedang aktif.
+     */
+    public function index(Request $request): Response
     {
+        $search = trim((string) $request->input('q', ''));
+
+        $items = Item::with(['baseUom', 'purchaseUom', 'itemCategory'])
+            ->when($search !== '', function ($builder) use ($search) {
+                $builder->where(function ($builder) use ($search) {
+                    $builder->where('sku', 'like', "%{$search}%")
+                        ->orWhere('name', 'like', "%{$search}%");
+                });
+            })
+            ->orderBy('name')
+            ->paginate(20)
+            ->withQueryString();
+
         return Inertia::render('Master/Items/Index', [
-            'items' => Item::with(['baseUom', 'purchaseUom', 'itemCategory'])->orderBy('sku')->get(),
+            'items' => $items,
+            'search' => $search,
         ]);
     }
 

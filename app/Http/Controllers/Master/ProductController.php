@@ -23,10 +23,32 @@ class ProductController extends Controller
 {
     public function __construct(private readonly ProductImageService $images) {}
 
-    public function index(): Response
+    /**
+     * `q` mencari nama maupun barcode -- keduanya kolom yang sudah
+     * ditampilkan di tabel, jadi hasil pencarian selalu bisa dijelaskan
+     * langsung dari apa yang terlihat. Pola sama ItemController::index()
+     * (default urut nama, paginate 20, withQueryString supaya `q` ikut
+     * terbawa di tiap link halaman).
+     */
+    public function index(Request $request): Response
     {
+        $search = trim((string) $request->input('q', ''));
+
+        $products = Product::with(['taxRate', 'productCategory'])
+            ->withCount('components')
+            ->when($search !== '', function ($builder) use ($search) {
+                $builder->where(function ($builder) use ($search) {
+                    $builder->where('name', 'like', "%{$search}%")
+                        ->orWhere('barcode', 'like', "%{$search}%");
+                });
+            })
+            ->orderBy('name')
+            ->paginate(20)
+            ->withQueryString();
+
         return Inertia::render('Master/Products/Index', [
-            'products' => Product::with(['taxRate', 'productCategory'])->withCount('components')->orderBy('name')->get(),
+            'products' => $products,
+            'search' => $search,
         ]);
     }
 

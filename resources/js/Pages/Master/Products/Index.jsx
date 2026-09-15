@@ -1,12 +1,33 @@
 import DangerButton from '@/Components/DangerButton';
+import Pagination from '@/Components/Pagination';
 import PrimaryButton from '@/Components/PrimaryButton';
 import ProductImage from '@/Components/ProductImage';
+import TextInput from '@/Components/TextInput';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import { Head, Link, router } from '@inertiajs/react';
+import { useEffect, useRef, useState } from 'react';
 
 const formatRupiah = (value) => 'Rp' + Math.round(Number(value)).toLocaleString('id-ID');
 
-export default function Index({ products }) {
+export default function Index({ products, search }) {
+    const [query, setQuery] = useState(search ?? '');
+    const debounceRef = useRef(null);
+    useEffect(() => {
+        return () => clearTimeout(debounceRef.current);
+    }, []);
+
+    const handleSearchChange = (value) => {
+        setQuery(value);
+        clearTimeout(debounceRef.current);
+        debounceRef.current = setTimeout(() => {
+            router.get(
+                route('master.products.index'),
+                { q: value },
+                { preserveState: true, replace: true },
+            );
+        }, 300);
+    };
+
     const destroy = (product) => {
         if (confirm(`Hapus produk "${product.name}"?`)) {
             router.delete(route('master.products.destroy', product.id));
@@ -30,7 +51,14 @@ export default function Index({ products }) {
                         disusun dari satu atau lebih Item lewat kolom "Komponen BOM" — stok yang berkurang saat
                         terjual adalah stok Item, bukan produk itu sendiri.
                     </p>
-                    <div className="flex justify-end">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                        <TextInput
+                            type="search"
+                            value={query}
+                            onChange={(e) => handleSearchChange(e.target.value)}
+                            placeholder="Cari nama atau barcode..."
+                            className="w-full max-w-xs"
+                        />
                         <Link href={route('master.products.create')}>
                             <PrimaryButton>Tambah Produk</PrimaryButton>
                         </Link>
@@ -66,7 +94,7 @@ export default function Index({ products }) {
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-gray-200 bg-white">
-                                {products.map((product) => (
+                                {products.data.map((product) => (
                                     <tr key={product.id}>
                                         <td className="whitespace-nowrap px-6 py-4">
                                             <ProductImage
@@ -127,19 +155,30 @@ export default function Index({ products }) {
                                         </td>
                                     </tr>
                                 ))}
-                                {products.length === 0 && (
+                                {products.data.length === 0 && (
                                     <tr>
                                         <td
                                             colSpan={9}
                                             className="px-6 py-4 text-center text-sm text-gray-500"
                                         >
-                                            Belum ada produk.
+                                            {query
+                                                ? 'Tidak ada produk yang cocok dengan pencarian.'
+                                                : 'Belum ada produk.'}
                                         </td>
                                     </tr>
                                 )}
                             </tbody>
                         </table>
                     </div>
+
+                    {products.total > 0 && (
+                        <div className="space-y-2">
+                            <p className="text-center text-sm text-gray-500">
+                                Menampilkan {products.from}–{products.to} dari {products.total} produk
+                            </p>
+                            <Pagination links={products.links} />
+                        </div>
+                    )}
                 </div>
             </div>
         </AuthenticatedLayout>
