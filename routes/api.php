@@ -54,6 +54,11 @@ Route::prefix('v1')->group(function () {
             // Langkah 3 fitur Draft -- pull draft lintas-device, pola sama
             // master data lain di grup ini (updated_since inkremental).
             Route::get('/drafts', [DraftController::class, 'index']);
+            // Fitur Void -- pull status sale yang berubah (mis. dibatalkan
+            // admin), watermark KHUSUS di sisi mobile (lihat
+            // SaleController::statusChanges()), bukan menumpang watermark
+            // master-data di atas.
+            Route::get('/sales/status-changes', [SaleController::class, 'statusChanges']);
         });
 
         Route::post('/sales', [SaleController::class, 'store'])

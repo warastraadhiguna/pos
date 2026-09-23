@@ -2,17 +2,23 @@
 
 namespace App\Http\Controllers\Kasir;
 
+use App\Exceptions\SaleAlreadyVoidedException;
 use App\Http\Controllers\Controller;
 use App\Models\Sale;
 use App\Models\User;
 use App\Services\BranchService;
+use App\Services\SaleService;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
 
 class SaleHistoryController extends Controller
 {
-    public function __construct(private readonly BranchService $branches) {}
+    public function __construct(
+        private readonly BranchService $branches,
+        private readonly SaleService $sales,
+    ) {}
 
     /**
      * Search box covers nomor transaksi (ID) + nama produk di dalamnya --
@@ -109,11 +115,34 @@ class SaleHistoryController extends Controller
         ]);
     }
 
-    public function show(Sale $sale): Response
+    public function show(Request $request, Sale $sale): Response
     {
         return Inertia::render('Penjualan/Show', [
             'sale' => $sale->load(['lines.product', 'lines.variations']),
+            'canVoid' => $request->user()->hasPermission('penjualan.void'),
         ]);
+    }
+
+    /**
+     * Batalkan sebuah sale `completed` -- lihat docblock
+     * `SaleService::voidSale()` untuk mekanismenya (reversing entries,
+     * bukan hapus data). Gated `permission:penjualan.void` di route
+     * (lihat routes/web.php), terpisah dari `penjualan.view` yang
+     * menggerbangi sisa controller ini.
+     */
+    public function void(Request $request, Sale $sale): RedirectResponse
+    {
+        $validated = $request->validate([
+            'reason' => ['required', 'string', 'max:500'],
+        ]);
+
+        try {
+            $this->sales->voidSale($sale, $validated['reason'], $request->user()->id);
+        } catch (SaleAlreadyVoidedException $e) {
+            return back()->with('error', $e->getMessage());
+        }
+
+        return back()->with('success', 'Transaksi berhasil dibatalkan.');
     }
 
     /**

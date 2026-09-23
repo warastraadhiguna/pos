@@ -8,6 +8,7 @@ use App\Http\Resources\SaleResource;
 use App\Models\Sale;
 use App\Services\BranchService;
 use App\Services\SaleService;
+use App\Support\SyncWatermark;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Throwable;
@@ -188,5 +189,37 @@ class SaleController extends Controller
         }
 
         return (new SaleResource($sale))->response();
+    }
+
+    /**
+     * Sale STATUS changes (mis. dibatalkan admin lewat web) untuk sale
+     * yang device ini SENDIRI pernah kirim -- lihat rancangan fitur Void.
+     * Sinkron SATU ARAH (server -> mobile), watermark `?updated_since=`
+     * KHUSUS (bukan menumpang endpoint master-data lain), pola persis
+     * endpoint pull master-data lain di grup `abilities:sync:pull`
+     * (lihat mis. `ProductCategoryController::index()`).
+     *
+     * HANYA sale yang statusnya SUDAH bukan `completed` -- mobile tidak
+     * pernah perlu tahu status sale `completed` (itu keadaan default sejak
+     * sale itu dibuat), jadi payload ini murni "apa yang berubah", bukan
+     * seluruh riwayat sale device ini.
+     */
+    public function statusChanges(Request $request): JsonResponse
+    {
+        $validated = $request->validate(['updated_since' => ['nullable', 'date']]);
+        $syncedAt = SyncWatermark::now();
+
+        $sales = SyncWatermark::applyIncrementalFilter(
+            Sale::query()->where('status', '!=', 'completed'),
+            $validated['updated_since'] ?? null,
+        )->orderBy('id')->get(['local_uuid', 'status']);
+
+        return response()->json([
+            'data' => $sales->map(fn (Sale $sale) => [
+                'local_uuid' => $sale->local_uuid,
+                'status' => $sale->status,
+            ]),
+            'meta' => ['synced_at' => $syncedAt->toIso8601String()],
+        ]);
     }
 }

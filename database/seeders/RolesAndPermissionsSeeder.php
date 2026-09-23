@@ -23,6 +23,7 @@ class RolesAndPermissionsSeeder extends Seeder
         $permissions = collect([
             ['key' => 'kasir.access', 'label' => 'Kasir (POS)', 'group' => 'Transaksi'],
             ['key' => 'penjualan.view', 'label' => 'Riwayat Penjualan', 'group' => 'Transaksi'],
+            ['key' => 'penjualan.void', 'label' => 'Batalkan Transaksi', 'group' => 'Transaksi'],
             ['key' => 'pembelian.manage', 'label' => 'Pembelian', 'group' => 'Transaksi'],
             ['key' => 'beban.manage', 'label' => 'Beban Operasional', 'group' => 'Transaksi'],
             ['key' => 'kas-bank.manage', 'label' => 'Kas & Bank', 'group' => 'Transaksi'],
@@ -53,7 +54,7 @@ class RolesAndPermissionsSeeder extends Seeder
 
         $manajer = Role::create(['name' => 'Manajer']);
         $manajer->permissions()->attach(
-            $permissions->except(['pengguna.manage', 'roles.manage', 'company-settings.manage', 'modal.manage', 'coa.manage', 'devices.manage', 'branches.manage', 'system.manage'])->pluck('id'),
+            $permissions->except(['pengguna.manage', 'roles.manage', 'company-settings.manage', 'modal.manage', 'coa.manage', 'devices.manage', 'branches.manage', 'system.manage', 'penjualan.void'])->pluck('id'),
         );
 
         $kasir = Role::create(['name' => 'Kasir']);

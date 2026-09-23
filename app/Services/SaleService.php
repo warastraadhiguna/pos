@@ -6,15 +6,19 @@ use App\Exceptions\CashierMismatchException;
 use App\Exceptions\DiscountDisabledException;
 use App\Exceptions\InsufficientCashReceivedException;
 use App\Exceptions\InvalidQrisAccountException;
+use App\Exceptions\SaleAlreadyVoidedException;
 use App\Exceptions\UnreconciledChangeAmountException;
 use App\Exceptions\UnreconciledSaleTotalException;
 use App\Models\CompanySetting;
 use App\Models\DiningTable;
+use App\Models\Journal;
+use App\Models\JournalLine;
 use App\Models\Member;
 use App\Models\Product;
 use App\Models\ProductVariation;
 use App\Models\Sale;
 use App\Models\SaleLine;
+use App\Models\SaleVoid;
 use App\Models\Warehouse;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Carbon;
@@ -511,6 +515,96 @@ class SaleService
             $freshSale->wasReplayed = false;
 
             return $freshSale;
+        });
+    }
+
+    /**
+     * Batalkan sebuah sale `completed` -- reversing entries, BUKAN
+     * hapus/ubah data lama (lihat rancangan fitur ini). Sale & jurnal
+     * aslinya TIDAK PERNAH disentuh; sebuah `SaleVoid` baru jadi anchor
+     * jurnal & stock_movements PEMBALIK, lalu `sales.status` diubah jadi
+     * `void`.
+     *
+     * Jurnal pembalik dibangun dari baris-baris jurnal ASLI (akun & jumlah
+     * SAMA PERSIS, debit/kredit ditukar) dan diposting dengan TANGGAL SALE
+     * ASLI (bukan tanggal void ditekan) -- supaya Laba Rugi/Neraca periode
+     * SAAT transaksi itu terjadi juga otomatis menunjukkan efek bersih
+     * nol, sesuai makna "void": transaksi dianggap tidak pernah terjadi.
+     * `FinancialReportService` menjumlah SELURUH histori `journal_lines`
+     * tanpa snapshot, jadi ini otomatis benar di laporan periode mana pun
+     * tanpa perlu ubah kode laporan sama sekali.
+     *
+     * Stock movement pembalik SENGAJA tanggalnya SEKARANG (bukan tanggal
+     * sale asli) -- beda dari jurnal di atas, karena "stok saat ini"
+     * (`InventoryService::currentStock()`) selalu baca baris TERBARU, itu
+     * konsep maju-ke-depan (barangnya baru kembali fisik sekarang), bukan
+     * retroaktif. `unit_cost` yang dipakai untuk mengembalikan tiap baris
+     * PERSIS `unit_cost` yang tercatat saat baris itu keluar (rata-rata
+     * berjalan SAAT ITU, lihat docblock `InventoryService::
+     * recordOutbound()`) -- pola sama `StockOpnameService` memposting
+     * surplus, supaya `running_average_cost` kembali seperti semula
+     * (menambah qty balik di harga yang sama tidak pernah menggeser
+     * rata-rata).
+     *
+     * Lock + re-check status di dalam transaksi (pola sama
+     * `StockOpnameService::postOpname()`) menjaga idempoten -- dua request
+     * void yang balapan untuk sale yang sama, salah satunya akan
+     * menemukan status sudah bukan `completed` lagi dan gagal dengan
+     * `SaleAlreadyVoidedException`, bukan memposting jurnal pembalik dua
+     * kali.
+     */
+    public function voidSale(Sale $sale, string $reason, ?int $voidedByUserId): Sale
+    {
+        return DB::transaction(function () use ($sale, $reason, $voidedByUserId) {
+            $locked = Sale::whereKey($sale->id)->lockForUpdate()->firstOrFail();
+
+            if ($locked->status !== 'completed') {
+                throw new SaleAlreadyVoidedException(
+                    "Sale #{$locked->id} berstatus '{$locked->status}', tidak bisa dibatalkan."
+                );
+            }
+
+            $saleVoid = SaleVoid::create([
+                'sale_id' => $locked->id,
+                'voided_by_user_id' => $voidedByUserId,
+                'reason' => $reason,
+            ]);
+
+            $journal = Journal::where('source_type', Sale::class)
+                ->where('source_id', $locked->id)
+                ->first();
+
+            if ($journal) {
+                $reversalLines = $journal->lines->map(fn (JournalLine $line) => [
+                    'account' => $line->account,
+                    'debit' => $line->credit,
+                    'credit' => $line->debit,
+                ])->all();
+
+                if ($reversalLines !== []) {
+                    $this->posting->post(
+                        lines: $reversalLines,
+                        date: $locked->date,
+                        source: $saleVoid,
+                        memo: "Pembatalan Penjualan {$locked->local_uuid}",
+                    );
+                }
+            }
+
+            foreach ($locked->stockMovements as $movement) {
+                $this->inventory->recordInbound(
+                    $movement->item,
+                    $movement->warehouse,
+                    $movement->qty_out,
+                    $movement->unit_cost,
+                    $saleVoid,
+                    now(),
+                );
+            }
+
+            $locked->update(['status' => 'void']);
+
+            return $locked->fresh(['lines.variations']);
         });
     }
 

@@ -1,7 +1,8 @@
+import DangerButton from '@/Components/DangerButton';
 import PrimaryButton from '@/Components/PrimaryButton';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import { formatDecimalID } from '@/utils/decimalFormat';
-import { Head, Link } from '@inertiajs/react';
+import { Head, Link, router } from '@inertiajs/react';
 
 const formatRupiah = (value) => 'Rp' + Math.round(Number(value)).toLocaleString('id-ID');
 const formatDate = (value) => String(value).slice(0, 10);
@@ -37,7 +38,23 @@ const paymentLabel = {
     qris: 'QRIS',
 };
 
-export default function Show({ sale }) {
+export default function Show({ sale, canVoid }) {
+    // Alasan dikumpulkan lewat `prompt()` (bukan modal khusus) -- pola
+    // konfirmasi native yang sudah dipakai di seluruh app ini (mis.
+    // `confirm()` di Master/Products/Index.jsx), bukan komponen Modal baru
+    // untuk satu tombol.
+    const handleVoid = () => {
+        const reason = window.prompt(
+            `Batalkan Transaksi #${sale.id}? Transaksi TIDAK bisa dikembalikan setelah ini.\n\nAlasan pembatalan (wajib diisi):`,
+        );
+        if (reason === null) return;
+        if (reason.trim() === '') {
+            window.alert('Alasan pembatalan wajib diisi.');
+            return;
+        }
+        router.post(route('penjualan.void', sale.id), { reason: reason.trim() });
+    };
+
     return (
         <AuthenticatedLayout
             header={
@@ -45,9 +62,14 @@ export default function Show({ sale }) {
                     <h2 className="text-xl font-semibold leading-tight text-gray-800">
                         Transaksi #{sale.id}
                     </h2>
-                    <Link href={route('penjualan.receipt', sale.id)} target="_blank">
-                        <PrimaryButton>Cetak Ulang Struk</PrimaryButton>
-                    </Link>
+                    <div className="flex items-center gap-2">
+                        {canVoid && sale.status === 'completed' && (
+                            <DangerButton onClick={handleVoid}>Batalkan Transaksi</DangerButton>
+                        )}
+                        <Link href={route('penjualan.receipt', sale.id)} target="_blank">
+                            <PrimaryButton>Cetak Ulang Struk</PrimaryButton>
+                        </Link>
+                    </div>
                 </div>
             }
         >

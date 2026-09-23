@@ -66,6 +66,10 @@ Route::middleware(['auth', 'verified', 'permission:penjualan.view'])->prefix('pe
     Route::get('/{sale}/struk', [SaleHistoryController::class, 'receipt'])->name('receipt');
 });
 
+Route::middleware(['auth', 'verified', 'permission:penjualan.void'])->prefix('penjualan')->name('penjualan.')->group(function () {
+    Route::post('/{sale}/void', [SaleHistoryController::class, 'void'])->name('void');
+});
+
 Route::middleware(['auth', 'verified', 'permission:pengguna.manage'])->prefix('pengguna')->name('users.')->group(function () {
     Route::get('/', [UserController::class, 'index'])->name('index');
     Route::get('/create', [UserController::class, 'create'])->name('create');
