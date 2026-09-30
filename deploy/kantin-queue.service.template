@@ -1,0 +1,16 @@
+[Unit]
+Description=Kantin (pos-akuntansi) queue worker
+After=network.target mysql.service
+
+[Service]
+User=www-data
+Group=www-data
+Restart=always
+RestartSec=5
+WorkingDirectory=/var/www/gelora/kantin
+ExecStart=/usr/bin/php8.4 /var/www/gelora/kantin/artisan queue:work --sleep=3 --tries=3 --max-time=3600
+MemoryMax=256M
+Nice=10
+
+[Install]
+WantedBy=multi-user.target

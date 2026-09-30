@@ -1,0 +1,35 @@
+server {
+    listen 80;
+    listen [::]:80;
+    server_name kantin.gelorasports.com;
+    root /var/www/gelora/kantin/public;
+
+    index index.php;
+    charset utf-8;
+
+    # Batas upload diatur di sini (per situs), BUKAN di php.ini global bersama.
+    client_max_body_size 20m;
+
+    location / {
+        try_files $uri $uri/ /index.php?$query_string;
+    }
+
+    location = /favicon.ico { access_log off; log_not_found off; }
+    location = /robots.txt  { access_log off; log_not_found off; }
+
+    error_page 404 /index.php;
+
+    location ~ \.php$ {
+        fastcgi_pass unix:/run/php/php8.4-fpm.sock;
+        fastcgi_param SCRIPT_FILENAME $realpath_root$fastcgi_script_name;
+        fastcgi_param PHP_VALUE "upload_max_filesize=20M \n post_max_size=20M";
+        include fastcgi_params;
+    }
+
+    location ~ /\.(?!well-known).* {
+        deny all;
+    }
+
+    access_log /var/log/nginx/kantin-access.log;
+    error_log  /var/log/nginx/kantin-error.log;
+}
