@@ -4,7 +4,7 @@ set -euo pipefail
 
 APP_DIR="/var/www/gelora/kantin"
 BACKUP_DIR="/var/backups/kantin"
-DB_NAME="kantin"
+DB_NAME="kantin-gelora"
 DATE="$(date +%Y%m%d-%H%M%S)"
 RETAIN_DAYS=14
 

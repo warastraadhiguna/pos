@@ -13,7 +13,7 @@ set -euo pipefail
 APP_SHORT_NAME="kantin"
 APP_DOMAIN="kantin.gelorasports.com"
 APP_DIR="/var/www/gelora/${APP_SHORT_NAME}"
-DB_NAME="kantin"
+DB_NAME="kantin-gelora"
 DB_USER="kantin"
 PHP_BIN="/usr/bin/php8.4"
 QUEUE_SERVICE="${APP_SHORT_NAME}-queue"
