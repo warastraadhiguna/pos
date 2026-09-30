@@ -58,6 +58,12 @@ mysql -e "CREATE DATABASE IF NOT EXISTS \`${DB_NAME}\` CHARACTER SET utf8mb4 COL
 mysql -e "CREATE USER IF NOT EXISTS '${DB_USER}'@'localhost' IDENTIFIED BY '${DB_PASSWORD}';"
 mysql -e "GRANT ALL PRIVILEGES ON \`${DB_NAME}\`.* TO '${DB_USER}'@'localhost';"
 mysql -e "FLUSH PRIVILEGES;"
+# TCP 127.0.0.1:3306 ternyata ditutup di server ini (MariaDB cuma terima
+# koneksi lewat unix socket) -- ditemukan 2026-09-30 saat `artisan migrate`
+# gagal "Connection refused" walau `mysql -e` di atas berhasil (itu lewat
+# socket, bukan TCP). Pakai unix_socket eksplisit supaya PDO ikut lewat
+# socket juga.
+DB_SOCKET="$(mysql -N -e "SHOW VARIABLES LIKE 'socket';" | awk '{print $2}')"
 
 echo "== 6. Menulis .env =="
 cat > .env <<ENV_EOF
@@ -86,6 +92,7 @@ DB_PORT=3306
 DB_DATABASE=${DB_NAME}
 DB_USERNAME=${DB_USER}
 DB_PASSWORD=${DB_PASSWORD}
+DB_SOCKET=${DB_SOCKET}
 
 SESSION_DRIVER=database
 SESSION_LIFETIME=120
