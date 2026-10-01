@@ -17,6 +17,8 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
     'inventory_account_id',
     'item_category_id',
     'is_active',
+    'is_consignment',
+    'consignment_supplier_id',
 ])]
 class Item extends Model
 {
@@ -34,12 +36,19 @@ class Item extends Model
             // persis dengan "Akun [1-1000] bukan Kas/Bank yang aktif".
             'base_uom_id' => 'integer',
             'purchase_uom_id' => 'integer',
+            'is_consignment' => 'boolean',
+            'consignment_supplier_id' => 'integer',
         ];
     }
 
     public function itemCategory(): BelongsTo
     {
         return $this->belongsTo(ItemCategory::class);
+    }
+
+    public function consignmentSupplier(): BelongsTo
+    {
+        return $this->belongsTo(Supplier::class, 'consignment_supplier_id');
     }
 
     public function baseUom(): BelongsTo

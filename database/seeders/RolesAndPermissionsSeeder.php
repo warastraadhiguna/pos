@@ -26,6 +26,7 @@ class RolesAndPermissionsSeeder extends Seeder
             ['key' => 'penjualan.void', 'label' => 'Batalkan Transaksi', 'group' => 'Transaksi'],
             ['key' => 'pembelian.manage', 'label' => 'Pembelian', 'group' => 'Transaksi'],
             ['key' => 'beban.manage', 'label' => 'Beban Operasional', 'group' => 'Transaksi'],
+            ['key' => 'konsinyasi.manage', 'label' => 'Konsinyasi', 'group' => 'Transaksi'],
             ['key' => 'kas-bank.manage', 'label' => 'Kas & Bank', 'group' => 'Transaksi'],
             ['key' => 'modal.manage', 'label' => 'Modal & Prive', 'group' => 'Transaksi'],
             ['key' => 'aset.manage', 'label' => 'Aset Tetap', 'group' => 'Transaksi'],

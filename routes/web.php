@@ -12,6 +12,9 @@ use App\Http\Controllers\DeviceController;
 use App\Http\Controllers\Distribusi\StockDistributionController;
 use App\Http\Controllers\KasBank\CashAccountController;
 use App\Http\Controllers\KasBank\CashTransferController;
+use App\Http\Controllers\Konsinyasi\ConsignmentPaymentController;
+use App\Http\Controllers\Konsinyasi\ConsignmentReceiptController;
+use App\Http\Controllers\Konsinyasi\ConsignmentReturnController;
 use App\Http\Controllers\Modal\EquityTransactionController;
 use App\Http\Controllers\Kasir\SaleController as KasirSaleController;
 use App\Http\Controllers\Kasir\SaleHistoryController;
@@ -192,6 +195,22 @@ Route::middleware(['auth', 'verified', 'permission:beban.manage'])->prefix('beba
     Route::get('/akun', [ExpenseAccountController::class, 'index'])->name('accounts.index');
     Route::post('/akun', [ExpenseAccountController::class, 'store'])->name('accounts.store');
     Route::put('/akun/{account}/toggle-active', [ExpenseAccountController::class, 'toggleActive'])->name('accounts.toggle-active');
+});
+
+Route::middleware(['auth', 'verified', 'permission:konsinyasi.manage'])->prefix('konsinyasi')->name('konsinyasi.')->group(function () {
+    Route::get('penerimaan', [ConsignmentReceiptController::class, 'index'])->name('receipts.index');
+    Route::get('penerimaan/create', [ConsignmentReceiptController::class, 'create'])->name('receipts.create');
+    Route::post('penerimaan', [ConsignmentReceiptController::class, 'store'])->name('receipts.store');
+
+    Route::get('retur', [ConsignmentReturnController::class, 'index'])->name('returns.index');
+    Route::get('retur/create', [ConsignmentReturnController::class, 'create'])->name('returns.create');
+    Route::post('retur', [ConsignmentReturnController::class, 'store'])->name('returns.store');
+
+    Route::get('pelunasan/summary', [ConsignmentPaymentController::class, 'summary'])->name('payments.summary');
+    Route::get('pelunasan/fifo-preview', [ConsignmentPaymentController::class, 'fifoPreview'])->name('payments.fifo-preview');
+    Route::get('pelunasan', [ConsignmentPaymentController::class, 'index'])->name('payments.index');
+    Route::get('pelunasan/create', [ConsignmentPaymentController::class, 'create'])->name('payments.create');
+    Route::post('pelunasan', [ConsignmentPaymentController::class, 'store'])->name('payments.store');
 });
 
 Route::middleware(['auth', 'verified', 'permission:kas-bank.manage'])->prefix('kas-bank')->name('kas-bank.')->group(function () {

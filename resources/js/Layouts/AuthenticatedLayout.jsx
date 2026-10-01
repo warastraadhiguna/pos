@@ -108,6 +108,33 @@ const navGroups = [
                 ],
             },
             {
+                name: "Konsinyasi",
+                icon: icons.pembelian,
+                children: [
+                    {
+                        name: "Terima Titipan",
+                        href: "konsinyasi.receipts.index",
+                        match: "konsinyasi.receipts.*",
+                        icon: icons.pembelian,
+                        permission: "konsinyasi.manage",
+                    },
+                    {
+                        name: "Retur Titipan",
+                        href: "konsinyasi.returns.index",
+                        match: "konsinyasi.returns.*",
+                        icon: icons.riwayat,
+                        permission: "konsinyasi.manage",
+                    },
+                    {
+                        name: "Bayar Hutang Konsinyasi",
+                        href: "konsinyasi.payments.index",
+                        match: "konsinyasi.payments.*",
+                        icon: icons.neraca,
+                        permission: "konsinyasi.manage",
+                    },
+                ],
+            },
+            {
                 name: "Beban Operasional",
                 icon: icons.beban,
                 children: [

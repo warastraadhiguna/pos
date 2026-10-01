@@ -66,7 +66,7 @@ class ItemController extends Controller
     public function edit(Item $item): Response
     {
         return Inertia::render('Master/Items/Form', [
-            'item' => $item,
+            'item' => $item->load('consignmentSupplier:id,name'),
             ...$this->formOptions(),
         ]);
     }
@@ -172,9 +172,17 @@ class ItemController extends Controller
             'standard_cost' => ['required', 'numeric', 'min:0'],
             'item_category_id' => ['nullable', 'exists:item_categories,id'],
             'is_active' => ['boolean'],
+            // Fitur Konsinyasi -- lihat rancangan. consignment_supplier_id
+            // wajib HANYA kalau is_consignment dicentang; item biasa
+            // (is_consignment default false) sama sekali tidak terdampak
+            // aturan ini.
+            'is_consignment' => ['boolean'],
+            'consignment_supplier_id' => ['nullable', 'required_if:is_consignment,true', 'exists:suppliers,id'],
         ]);
 
         $data['is_active'] = $request->boolean('is_active');
+        $data['is_consignment'] = $request->boolean('is_consignment');
+        $data['consignment_supplier_id'] = $data['is_consignment'] ? $data['consignment_supplier_id'] : null;
         $data['inventory_account_id'] = Account::where('code', '1-1200')->firstOrFail()->id;
 
         return $data;

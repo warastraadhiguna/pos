@@ -5,6 +5,7 @@ import NumberInput from '@/Components/NumberInput';
 import PrimaryButton from '@/Components/PrimaryButton';
 import SecondaryButton from '@/Components/SecondaryButton';
 import SelectInput from '@/Components/SelectInput';
+import SupplierCombobox from '@/Components/SupplierCombobox';
 import TextInput from '@/Components/TextInput';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import { Head, Link, useForm } from '@inertiajs/react';
@@ -22,6 +23,8 @@ export default function Form({ item, uoms, itemCategories }) {
         standard_cost: item?.standard_cost ?? '0',
         item_category_id: item?.item_category_id ?? '',
         is_active: item?.is_active ?? true,
+        is_consignment: item?.is_consignment ?? false,
+        consignment_supplier_id: item?.consignment_supplier_id ?? '',
     });
 
     const isCostOnly = data.costing_type === 'cost_only';
@@ -291,6 +294,53 @@ export default function Form({ item, uoms, itemCategories }) {
                                     message={errors.item_category_id}
                                 />
                             </div>
+
+                            <div className="flex items-center gap-2">
+                                <Checkbox
+                                    id="is_consignment"
+                                    checked={data.is_consignment}
+                                    onChange={(e) =>
+                                        setData(
+                                            'is_consignment',
+                                            e.target.checked,
+                                        )
+                                    }
+                                />
+                                <InputLabel
+                                    htmlFor="is_consignment"
+                                    value="Item Konsinyasi (titip jual)"
+                                />
+                            </div>
+
+                            {data.is_consignment && (
+                                <div>
+                                    <InputLabel value="Supplier Pemilik" />
+                                    <div className="mt-1">
+                                        <SupplierCombobox
+                                            initialItem={
+                                                item?.consignment_supplier ?? null
+                                            }
+                                            onSelect={(supplier) =>
+                                                setData(
+                                                    'consignment_supplier_id',
+                                                    supplier.id,
+                                                )
+                                            }
+                                        />
+                                    </div>
+                                    <p className="mt-1 text-xs text-gray-500">
+                                        Toko tidak memiliki/berutang apa pun
+                                        untuk item ini sampai benar-benar
+                                        terjual -- lihat menu Konsinyasi.
+                                    </p>
+                                    <InputError
+                                        className="mt-2"
+                                        message={
+                                            errors.consignment_supplier_id
+                                        }
+                                    />
+                                </div>
+                            )}
 
                             <div className="flex items-center gap-2">
                                 <Checkbox

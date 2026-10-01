@@ -10,6 +10,7 @@ use App\Exceptions\SaleAlreadyVoidedException;
 use App\Exceptions\UnreconciledChangeAmountException;
 use App\Exceptions\UnreconciledSaleTotalException;
 use App\Models\CompanySetting;
+use App\Models\ConsignmentAccrual;
 use App\Models\DiningTable;
 use App\Models\Journal;
 use App\Models\JournalLine;
@@ -37,6 +38,9 @@ class SaleService
     private const ACCOUNT_PENJUALAN = '4-1000';
 
     private const ACCOUNT_HPP = '5-1000';
+
+    // Fitur Konsinyasi -- diseed 2026_10_01_100800_seed_consignment_account_and_permission.php.
+    private const ACCOUNT_HUTANG_KONSINYASI = '2-3000';
 
     /**
      * The unique index Laravel generated for sales.local_uuid (verified via
@@ -383,9 +387,17 @@ class SaleService
             $taxTotal = '0';
             $grandTotal = '0';
             $hppGrandTotal = '0';
+            // Fitur Konsinyasi -- total HPP item konsinyasi, dikelompokkan
+            // per supplier_id, TERPISAH dari $hppGrandTotal di atas (yang
+            // TIDAK berubah rumusnya -- tetap total biaya SELURUH baris,
+            // konsinyasi atau bukan). Dipakai postSaleJournal() untuk
+            // memutuskan porsi mana yang kredit Persediaan (milik sendiri)
+            // vs kredit Hutang Konsinyasi (lihat method itu), dan
+            // recordConsignmentAccruals() di bawah untuk "nota" per-supplier.
+            $consignmentHppBySupplier = [];
 
             foreach ($data['lines'] as $lineData) {
-                [$lineNet, $lineTax, $lineInclusive, $hppLineTotal] = $this->createSaleLine(
+                [$lineNet, $lineTax, $lineInclusive, $hppLineTotal, $lineConsignmentBySupplier] = $this->createSaleLine(
                     $sale, $warehouse, $lineData, $occurredAt, $ppnActive,
                 );
 
@@ -393,6 +405,12 @@ class SaleService
                 $taxTotal = bcadd($taxTotal, $lineTax, self::SCALE);
                 $grandTotal = bcadd($grandTotal, $lineInclusive, self::SCALE);
                 $hppGrandTotal = bcadd($hppGrandTotal, $hppLineTotal, self::SCALE);
+
+                foreach ($lineConsignmentBySupplier as $supplierId => $amount) {
+                    $consignmentHppBySupplier[$supplierId] = bcadd(
+                        $consignmentHppBySupplier[$supplierId] ?? '0', $amount, self::SCALE,
+                    );
+                }
             }
 
             // Jaring pengaman: subtotal + tax_total HARUS eksak sama dengan
@@ -500,7 +518,8 @@ class SaleService
                 'discount_amount' => $discountAmount,
             ]);
 
-            $this->postSaleJournal($sale, $subtotal, $taxTotal, $grandTotal, $hppGrandTotal, $occurredAt, $cashAccountCode);
+            $this->postSaleJournal($sale, $subtotal, $taxTotal, $grandTotal, $hppGrandTotal, $consignmentHppBySupplier, $occurredAt, $cashAccountCode);
+            $this->recordConsignmentAccruals($sale, $consignmentHppBySupplier, $occurredAt);
 
             // Langkah 3 fitur Draft: kalau sale ini finalisasi sebuah draft
             // (mobile mengirim `draft_local_uuid`), tandai draft itu
@@ -604,6 +623,13 @@ class SaleService
 
             $locked->update(['status' => 'void']);
 
+            // Fitur Konsinyasi -- tandai "nota" Hutang Konsinyasi milik
+            // sale ini (kalau ada) sebagai void juga, supaya laporan
+            // ConsignmentPayableReportService tidak lagi menghitungnya.
+            // No-op (UPDATE 0 baris) untuk SEMUA sale yang tidak pernah
+            // menjual item konsinyasi -- yaitu semua sale hari ini.
+            ConsignmentAccrual::where('sale_id', $locked->id)->whereNull('voided_at')->update(['voided_at' => now()]);
+
             return $locked->fresh(['lines.variations']);
         });
     }
@@ -648,7 +674,7 @@ class SaleService
      * switch was off?).
      *
      * @param  array{product_id: int, product_name?: ?string, qty: int|float|string, unit_price: int|float|string, note?: ?string, variations?: array<int, array{variation_id: int, name?: ?string, price?: int|float|string|null}>}  $lineData
-     * @return array{0: string, 1: string, 2: string, 3: string} [line_net, line_tax, line_inclusive, hpp_total]
+     * @return array{0: string, 1: string, 2: string, 3: string, 4: array<int, string>} [line_net, line_tax, line_inclusive, hpp_total, consignment_hpp_by_supplier_id]
      */
     private function createSaleLine(Sale $sale, Warehouse $warehouse, array $lineData, \DateTimeInterface|string $date, bool $ppnActive): array
     {
@@ -684,6 +710,10 @@ class SaleService
         }
 
         $hppLineTotal = '0';
+        // Fitur Konsinyasi -- lihat docblock $consignmentHppBySupplier di
+        // createSale(). Map lokal untuk baris INI saja, digabung balik ke
+        // map tingkat-sale oleh pemanggil.
+        $lineConsignmentBySupplier = [];
 
         foreach ($product->components as $component) {
             $componentQty = bcmul((string) $component->qty, $qty, self::SCALE);
@@ -698,16 +728,28 @@ class SaleService
             );
 
             $hppLineTotal = bcadd($hppLineTotal, $hpp, self::SCALE);
+
+            if ($component->item->is_consignment) {
+                $supplierId = (int) $component->item->consignment_supplier_id;
+                $lineConsignmentBySupplier[$supplierId] = bcadd(
+                    $lineConsignmentBySupplier[$supplierId] ?? '0', $hpp, self::SCALE,
+                );
+            }
         }
 
         // Tahap 2: konsumsi BOM tiap variasi terpilih (kalau ada) DULU, di
         // sini -- SEBELUM sale_lines dibuat -- supaya hpp_total baris sudah
         // benar (produk + Σ variasi) sejak baris pertama kali ditulis,
         // bukan lewat UPDATE susulan. Lihat consumeSaleLineVariations().
-        [$variationRows, $variationHppTotal] = $this->consumeSaleLineVariations(
+        [$variationRows, $variationHppTotal, $variationConsignmentBySupplier] = $this->consumeSaleLineVariations(
             $sale, $warehouse, $product, $qty, $lineData['variations'] ?? [], $date,
         );
         $hppLineTotal = bcadd($hppLineTotal, $variationHppTotal, self::SCALE);
+        foreach ($variationConsignmentBySupplier as $supplierId => $amount) {
+            $lineConsignmentBySupplier[$supplierId] = bcadd(
+                $lineConsignmentBySupplier[$supplierId] ?? '0', $amount, self::SCALE,
+            );
+        }
 
         $saleLine = $sale->lines()->create([
             'product_id' => $product->id,
@@ -724,7 +766,7 @@ class SaleService
             $saleLine->variations()->create($row);
         }
 
-        return [$lineNet, $lineTax, $lineInclusive, $hppLineTotal];
+        return [$lineNet, $lineTax, $lineInclusive, $hppLineTotal, $lineConsignmentBySupplier];
     }
 
     /**
@@ -763,7 +805,7 @@ class SaleService
      * seperti product_name/member_name_snapshot).
      *
      * @param  array<int, array{variation_id: int, name?: ?string, price?: int|float|string|null}>  $variations
-     * @return array{0: array<int, array{variation_id: int, name_snapshot: string, price_snapshot: string, hpp_snapshot: string}>, 1: string} [rows to insert once sale_line exists, total variation HPP for this line]
+     * @return array{0: array<int, array{variation_id: int, name_snapshot: string, price_snapshot: string, hpp_snapshot: string}>, 1: string, 2: array<int, string>} [rows to insert once sale_line exists, total variation HPP for this line, consignment HPP by supplier_id]
      */
     private function consumeSaleLineVariations(
         Sale $sale,
@@ -775,6 +817,8 @@ class SaleService
     ): array {
         $rows = [];
         $totalHpp = '0';
+        // Fitur Konsinyasi -- pola identik createSaleLine()'s $lineConsignmentBySupplier.
+        $consignmentBySupplier = [];
 
         foreach ($variations as $variationData) {
             // Wajib milik produk baris ini -- mencegah baris "salah
@@ -808,6 +852,13 @@ class SaleService
                 );
 
                 $variationHpp = bcadd($variationHpp, $hpp, self::SCALE);
+
+                if ($component->item->is_consignment) {
+                    $supplierId = (int) $component->item->consignment_supplier_id;
+                    $consignmentBySupplier[$supplierId] = bcadd(
+                        $consignmentBySupplier[$supplierId] ?? '0', $hpp, self::SCALE,
+                    );
+                }
             }
 
             $rows[] = [
@@ -819,15 +870,25 @@ class SaleService
             $totalHpp = bcadd($totalHpp, $variationHpp, self::SCALE);
         }
 
-        return [$rows, $totalHpp];
+        return [$rows, $totalHpp, $consignmentBySupplier];
     }
 
+    /**
+     * [$consignmentHppBySupplier] -- Fitur Konsinyasi. Kalau KOSONG (setiap
+     * sale sebelum fitur ini ada, dan setiap sale tanpa item konsinyasi ke
+     * depan), `$lines` yang dihasilkan method ini IDENTIK 100% dengan
+     * sebelum fitur ini ditambahkan -- lihat test regresi
+     * SaleServiceConsignmentTest. Item [string $supplierId => string
+     * $amount]: porsi $hppTotal yang berasal dari item konsinyasi supplier
+     * itu, SUDAH termasuk dalam $hppTotal (bukan tambahan di luar itu).
+     */
     private function postSaleJournal(
         Sale $sale,
         string $subtotal,
         string $taxTotal,
         string $grandTotal,
         string $hppTotal,
+        array $consignmentHppBySupplier,
         \DateTimeInterface|string $date,
         string $cashAccountCode,
     ): void {
@@ -851,7 +912,31 @@ class SaleService
 
         if (bccomp($hppTotal, '0', self::SCALE) !== 0) {
             $lines[] = ['account' => self::ACCOUNT_HPP, 'debit' => $hppTotal, 'credit' => 0];
-            $lines[] = ['account' => self::ACCOUNT_PERSEDIAAN, 'debit' => 0, 'credit' => $hppTotal];
+
+            // Fitur Konsinyasi -- porsi milik-sendiri (bukan konsinyasi)
+            // tetap kredit Persediaan PERSIS seperti sebelum fitur ini ada
+            // (dikurangi, bukan dihitung ulang, supaya tidak ada selisih
+            // pembulatan baru). Porsi konsinyasi (kalau ada) kredit Hutang
+            // Konsinyasi, SATU baris per supplier yang muncul di sale ini
+            // -- bukan Persediaan, karena barang itu tidak pernah tercatat
+            // sebagai aset milik toko (lihat ConsignmentService, Terima
+            // Titipan tidak pernah posting jurnal).
+            $consignmentTotal = array_reduce(
+                $consignmentHppBySupplier,
+                fn (string $carry, string $amount) => bcadd($carry, $amount, self::SCALE),
+                '0',
+            );
+            $ownedHppTotal = bcsub($hppTotal, $consignmentTotal, self::SCALE);
+
+            if (bccomp($ownedHppTotal, '0', self::SCALE) !== 0) {
+                $lines[] = ['account' => self::ACCOUNT_PERSEDIAAN, 'debit' => 0, 'credit' => $ownedHppTotal];
+            }
+
+            foreach ($consignmentHppBySupplier as $amount) {
+                if (bccomp($amount, '0', self::SCALE) !== 0) {
+                    $lines[] = ['account' => self::ACCOUNT_HUTANG_KONSINYASI, 'debit' => 0, 'credit' => $amount];
+                }
+            }
         }
 
         $this->posting->post(
@@ -860,5 +945,29 @@ class SaleService
             source: $sale,
             memo: "Penjualan {$sale->local_uuid}",
         );
+    }
+
+    /**
+     * Fitur Konsinyasi -- simpan "nota" ConsignmentAccrual per supplier
+     * yang item-nya terjual di sale ini (lihat docblock model/migrasinya
+     * untuk alasan tabel ini perlu ada). No-op kalau $consignmentHppBySupplier
+     * kosong -- setiap sale tanpa item konsinyasi.
+     *
+     * @param  array<int, string>  $consignmentHppBySupplier
+     */
+    private function recordConsignmentAccruals(Sale $sale, array $consignmentHppBySupplier, \DateTimeInterface|string $date): void
+    {
+        foreach ($consignmentHppBySupplier as $supplierId => $amount) {
+            if (bccomp($amount, '0', self::SCALE) === 0) {
+                continue;
+            }
+
+            ConsignmentAccrual::create([
+                'sale_id' => $sale->id,
+                'supplier_id' => $supplierId,
+                'date' => $date,
+                'amount' => $amount,
+            ]);
+        }
     }
 }
