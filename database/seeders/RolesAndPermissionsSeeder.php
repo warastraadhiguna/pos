@@ -48,6 +48,16 @@ class RolesAndPermissionsSeeder extends Seeder
             ['key' => 'system.manage', 'label' => 'Pengaturan Sistem (Developer)', 'group' => 'Pengaturan', 'is_developer_only' => true],
         ])->mapWithKeys(fn (array $permission) => [$permission['key'] => Permission::create($permission)]);
 
+        // Owner -- akses PENUH (semua permission biasa, sama persis set
+        // Admin) -- lihat docblock migrasi 2026_10_02_100000_seed_owner_role.php
+        // untuk alasan dipisah dari Admin (rencana Admin dibatasi belakangan,
+        // bukan bagian seeder ini) dan kenapa devices.manage/system.manage
+        // (is_developer_only) sengaja tidak ikut.
+        $owner = Role::create(['name' => 'Owner']);
+        $owner->permissions()->attach(
+            $permissions->except(['devices.manage', 'system.manage'])->pluck('id'),
+        );
+
         $admin = Role::create(['name' => 'Admin']);
         $admin->permissions()->attach(
             $permissions->except(['devices.manage', 'system.manage'])->pluck('id'),
