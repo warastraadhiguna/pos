@@ -19,6 +19,7 @@ use App\Http\Controllers\Konsinyasi\ConsignmentReturnController;
 use App\Http\Controllers\Modal\EquityTransactionController;
 use App\Http\Controllers\Kasir\SaleController as KasirSaleController;
 use App\Http\Controllers\Kasir\SaleHistoryController;
+use App\Http\Controllers\Kasir\SaleLineHistoryController;
 use App\Http\Controllers\Master\ItemCategoryController;
 use App\Http\Controllers\Master\ItemController;
 use App\Http\Controllers\Master\MemberController;
@@ -32,6 +33,7 @@ use App\Http\Controllers\Master\UomController;
 use App\Http\Controllers\FinancialReportController;
 use App\Http\Controllers\InventoryReportController;
 use App\Http\Controllers\Pembelian\GoodsReceiptController;
+use App\Http\Controllers\Pembelian\PurchaseItemHistoryController;
 use App\Http\Controllers\Pembelian\PurchaseOrderController;
 use App\Http\Controllers\Pembelian\SupplierPaymentController;
 use App\Http\Controllers\ProductProfitReportController;
@@ -63,6 +65,14 @@ Route::middleware(['auth', 'verified', 'permission:kasir.access'])->group(functi
     Route::get('/kasir', [KasirSaleController::class, 'index'])->name('kasir.index');
     Route::post('/kasir', [KasirSaleController::class, 'store'])->name('kasir.store');
 });
+
+// Nama route sengaja DI LUAR prefix `penjualan.` -- menu "Riwayat
+// Penjualan" menyorot `penjualan.*`, jadi route di bawah prefix itu akan
+// ikut menyorotnya. URL-nya juga tidak boleh `/penjualan/per-produk`
+// karena bertabrakan dengan `/penjualan/{sale}`.
+Route::middleware(['auth', 'verified', 'permission:penjualan.view'])
+    ->get('/penjualan-per-produk', [SaleLineHistoryController::class, 'index'])
+    ->name('penjualan-per-produk.index');
 
 Route::middleware(['auth', 'verified', 'permission:penjualan.view'])->prefix('penjualan')->name('penjualan.')->group(function () {
     Route::get('/', [SaleHistoryController::class, 'index'])->name('index');
@@ -184,6 +194,7 @@ Route::middleware(['auth', 'verified', 'permission:master-data.manage'])->prefix
 });
 
 Route::middleware(['auth', 'verified', 'permission:pembelian.manage'])->prefix('pembelian')->name('pembelian.')->group(function () {
+    Route::get('riwayat-per-item', [PurchaseItemHistoryController::class, 'index'])->name('item-history.index');
     Route::resource('purchase-orders', PurchaseOrderController::class)->only(['index', 'create', 'store', 'show']);
     Route::get('purchase-orders/{purchaseOrder}/receive', [GoodsReceiptController::class, 'create'])->name('purchase-orders.receive.create');
     Route::post('purchase-orders/{purchaseOrder}/receive', [GoodsReceiptController::class, 'store'])->name('purchase-orders.receive.store');

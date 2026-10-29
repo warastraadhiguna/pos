@@ -85,6 +85,13 @@ const navGroups = [
                         icon: icons.riwayat,
                         permission: "penjualan.view",
                     },
+                    {
+                        name: "Riwayat per Produk",
+                        href: "penjualan-per-produk.index",
+                        match: "penjualan-per-produk.*",
+                        icon: icons.riwayat,
+                        permission: "penjualan.view",
+                    },
                 ],
             },
             {
@@ -96,6 +103,13 @@ const navGroups = [
                         href: "pembelian.purchase-orders.index",
                         match: "pembelian.purchase-orders.*",
                         icon: icons.pembelian,
+                        permission: "pembelian.manage",
+                    },
+                    {
+                        name: "Riwayat per Item",
+                        href: "pembelian.item-history.index",
+                        match: "pembelian.item-history.*",
+                        icon: icons.riwayat,
                         permission: "pembelian.manage",
                     },
                     {
