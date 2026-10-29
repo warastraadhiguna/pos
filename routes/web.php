@@ -3,6 +3,7 @@
 use App\Http\Controllers\Aset\DepreciationController;
 use App\Http\Controllers\Aset\FixedAssetController;
 use App\Http\Controllers\Aset\FixedAssetPaymentController;
+use App\Http\Controllers\BackupController;
 use App\Http\Controllers\Beban\ExpenseAccountController;
 use App\Http\Controllers\Beban\ExpenseController;
 use App\Http\Controllers\Beban\ExpensePaymentController;
@@ -89,6 +90,13 @@ Route::middleware(['auth', 'verified', 'permission:roles.manage'])->prefix('role
     Route::get('/{role}/edit', [RoleController::class, 'edit'])->name('edit');
     Route::put('/{role}', [RoleController::class, 'update'])->name('update');
     Route::delete('/{role}', [RoleController::class, 'destroy'])->name('destroy');
+});
+
+Route::middleware(['auth', 'verified', 'permission:backup.manage'])->prefix('backup')->name('backup.')->group(function () {
+    Route::get('/', [BackupController::class, 'index'])->name('index');
+    Route::post('/', [BackupController::class, 'store'])->name('store');
+    Route::get('/{filename}/download', [BackupController::class, 'download'])->name('download');
+    Route::delete('/{filename}', [BackupController::class, 'destroy'])->name('destroy');
 });
 
 Route::middleware(['auth', 'verified', 'permission:company-settings.manage'])->prefix('pengaturan')->name('pengaturan.')->group(function () {

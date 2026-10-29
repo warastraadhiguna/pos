@@ -37,6 +37,7 @@ class RolesAndPermissionsSeeder extends Seeder
             ['key' => 'laporan.view', 'label' => 'Laporan', 'group' => 'Laporan'],
             ['key' => 'pengguna.manage', 'label' => 'Kelola Pengguna', 'group' => 'Pengaturan'],
             ['key' => 'roles.manage', 'label' => 'Kelola Role & Izin', 'group' => 'Pengaturan'],
+            ['key' => 'backup.manage', 'label' => 'Backup Database', 'group' => 'Pengaturan'],
             ['key' => 'company-settings.manage', 'label' => 'Pengaturan Pajak (PPN)', 'group' => 'Pengaturan'],
             // Role Developer (hidden super-admin) -- developer-only sejak
             // awal di instalasi fresh, TIDAK PERNAH di-attach ke
@@ -65,7 +66,7 @@ class RolesAndPermissionsSeeder extends Seeder
 
         $manajer = Role::create(['name' => 'Manajer']);
         $manajer->permissions()->attach(
-            $permissions->except(['pengguna.manage', 'roles.manage', 'company-settings.manage', 'modal.manage', 'coa.manage', 'devices.manage', 'branches.manage', 'system.manage', 'penjualan.void'])->pluck('id'),
+            $permissions->except(['pengguna.manage', 'roles.manage', 'backup.manage', 'company-settings.manage', 'modal.manage', 'coa.manage', 'devices.manage', 'branches.manage', 'system.manage', 'penjualan.void'])->pluck('id'),
         );
 
         $kasir = Role::create(['name' => 'Kasir']);

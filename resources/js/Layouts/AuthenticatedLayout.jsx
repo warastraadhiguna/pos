@@ -437,6 +437,13 @@ const navGroups = [
                 permission: "roles.manage",
             },
             {
+                name: "Backup Database",
+                href: "backup.index",
+                match: "backup.*",
+                icon: icons.layers,
+                permission: "backup.manage",
+            },
+            {
                 name: "Pengaturan",
                 href: "pengaturan.index",
                 match: "pengaturan.*",
