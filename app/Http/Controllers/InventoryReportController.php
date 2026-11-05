@@ -37,6 +37,12 @@ class InventoryReportController extends Controller
         $items = Item::with(['itemCategory:id,name', 'baseUom:id,code'])
             ->orderBy('sku')
             ->get()
+            // Item nonaktif (mis. item dobel yang sudah digabung) disembunyikan
+            // kalau stoknya nol. Yang stoknya BUKAN nol tetap tampil supaya
+            // total nilai persediaan di sini tetap cocok dengan buku besar.
+            ->filter(fn (Item $item) => $item->is_active
+                || bccomp((string) ($latestByItem->get($item->id)?->running_qty ?? '0'), '0', 4) !== 0)
+            ->values()
             ->map(function (Item $item) use ($latestByItem) {
                 if ($item->costing_type === 'cost_only') {
                     return [
