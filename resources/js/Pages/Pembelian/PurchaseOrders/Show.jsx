@@ -1,8 +1,9 @@
+import DangerButton from '@/Components/DangerButton';
 import PrimaryButton from '@/Components/PrimaryButton';
 import SecondaryButton from '@/Components/SecondaryButton';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import { formatDecimalID } from '@/utils/decimalFormat';
-import { Head, Link } from '@inertiajs/react';
+import { Head, Link, router } from '@inertiajs/react';
 
 const formatRupiah = (value) => 'Rp' + Math.round(Number(value)).toLocaleString('id-ID');
 const formatDate = (value) => String(value).slice(0, 10);
@@ -19,6 +20,7 @@ const notaBadgeLabel = {
     lunas: 'Kredit — Lunas',
     sebagian: 'Kredit — Sebagian',
     belum: 'Kredit — Belum Dibayar',
+    dibatalkan: 'Dibatalkan',
 };
 
 const notaBadgeClass = {
@@ -26,6 +28,7 @@ const notaBadgeClass = {
     lunas: 'bg-green-100 text-green-700',
     sebagian: 'bg-amber-100 text-amber-700',
     belum: 'bg-red-100 text-red-700',
+    dibatalkan: 'bg-gray-200 text-gray-600',
 };
 
 function NotaBadge({ status }) {
@@ -38,7 +41,60 @@ function NotaBadge({ status }) {
     );
 }
 
-export default function Show({ purchaseOrder, lines, receipts }) {
+// Alasan wajib -- prompt sederhana, pola sama void penjualan di
+// Penjualan/Show.jsx. Null = dibatalkan pengguna.
+const askReason = (label) => {
+    const reason = window.prompt(`Alasan ${label}:`);
+    if (reason === null) return null;
+    if (reason.trim() === '') {
+        window.alert('Alasan wajib diisi.');
+        return null;
+    }
+    return reason.trim();
+};
+
+// Pelanggaran aturan (nota sudah dibayar / stok akan minus) tidak diblokir,
+// tapi wajib dikonfirmasi -- lihat PurchaseService::voidWarnings().
+const voidWarningText = (warnings) => {
+    const items = [];
+    if (Number(warnings.paid) > 0) {
+        items.push(
+            `Nota ini sudah dibayar ${formatRupiah(warnings.paid)}. Setelah dibatalkan, hutang ke supplier jadi minus sebesar itu (supplier perlu mengembalikan uangnya).`,
+        );
+    }
+    for (const short of warnings.short_stock) {
+        items.push(
+            `Stok ${short.name} tinggal ${formatDecimalID(short.stock)}, yang ditarik ${formatDecimalID(short.qty)}. Stok akan jadi minus.`,
+        );
+    }
+    return items;
+};
+
+export default function Show({ purchaseOrder, lines, receipts, canCancel }) {
+    const voidReceipt = (receipt) => {
+        const warnings = voidWarningText(receipt.void_warnings);
+        const message =
+            warnings.length > 0
+                ? `PERINGATAN — Penerimaan #${receipt.id}:\n\n- ${warnings.join('\n- ')}\n\nTetap batalkan?`
+                : `Batalkan penerimaan #${receipt.id}? Stok dan jurnalnya akan dibalik.`;
+        if (!window.confirm(message)) return;
+
+        const reason = askReason('pembatalan penerimaan');
+        if (reason === null) return;
+
+        router.post(
+            route('pembelian.purchase-orders.receipts.void', [purchaseOrder.id, receipt.id]),
+            { reason, confirm: warnings.length > 0 },
+            { preserveScroll: true },
+        );
+    };
+
+    const cancelPurchaseOrder = () => {
+        const reason = askReason('pembatalan PO');
+        if (reason === null) return;
+        router.post(route('pembelian.purchase-orders.cancel', purchaseOrder.id), { reason });
+    };
+
     return (
         <AuthenticatedLayout
             header={
@@ -92,8 +148,15 @@ export default function Show({ purchaseOrder, lines, receipts }) {
                             </div>
                         )}
 
-                        {purchaseOrder.status !== 'received' && (
-                            <div className="mt-4">
+                        {purchaseOrder.status === 'cancelled' && (
+                            <div className="mt-4 rounded-md bg-red-50 p-3 text-sm text-red-800">
+                                Dibatalkan
+                                {purchaseOrder.cancel_reason ? ` — ${purchaseOrder.cancel_reason}` : ''}
+                            </div>
+                        )}
+
+                        {purchaseOrder.status !== 'received' && purchaseOrder.status !== 'cancelled' && (
+                            <div className="mt-4 flex gap-2">
                                 <Link
                                     href={route(
                                         'pembelian.purchase-orders.receive.create',
@@ -104,6 +167,11 @@ export default function Show({ purchaseOrder, lines, receipts }) {
                                         Terima Barang
                                     </PrimaryButton>
                                 </Link>
+                                {canCancel && (
+                                    <DangerButton type="button" onClick={cancelPurchaseOrder}>
+                                        Batalkan PO
+                                    </DangerButton>
+                                )}
                             </div>
                         )}
                     </div>
@@ -198,7 +266,10 @@ export default function Show({ purchaseOrder, lines, receipts }) {
                             {receipts.map((receipt) => (
                                 <div
                                     key={receipt.id}
-                                    className="rounded-lg bg-white p-4 shadow-sm"
+                                    className={
+                                        'rounded-lg bg-white p-4 shadow-sm' +
+                                        (receipt.voided_at ? ' opacity-60' : '')
+                                    }
                                 >
                                     <div className="mb-2 flex items-center justify-between">
                                         <div className="flex items-center gap-2 text-sm font-medium text-gray-900">
@@ -212,6 +283,7 @@ export default function Show({ purchaseOrder, lines, receipts }) {
                                                 }
                                             />
                                         </div>
+                                        <div className="flex gap-2">
                                         {(receipt.nota_status.status ===
                                             'sebagian' ||
                                             receipt.nota_status.status ===
@@ -233,7 +305,20 @@ export default function Show({ purchaseOrder, lines, receipts }) {
                                                 </SecondaryButton>
                                             </Link>
                                         )}
+                                        {!receipt.voided_at && (
+                                            <DangerButton type="button" onClick={() => voidReceipt(receipt)}>
+                                                Batalkan
+                                            </DangerButton>
+                                        )}
+                                        </div>
                                     </div>
+                                    {receipt.voided_at && (
+                                        <div className="mb-2 rounded-md bg-red-50 p-2 text-sm text-red-800">
+                                            Dibatalkan {formatDate(receipt.voided_at)}
+                                            {receipt.voided_by ? ` oleh ${receipt.voided_by.name}` : ''}
+                                            {receipt.void_reason ? ` — ${receipt.void_reason}` : ''}
+                                        </div>
+                                    )}
                                     <ul className="space-y-1 text-sm text-gray-600">
                                         {receipt.lines.map((line) => (
                                             <li key={line.id}>

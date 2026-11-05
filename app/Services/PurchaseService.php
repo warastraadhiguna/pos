@@ -2,11 +2,15 @@
 
 namespace App\Services;
 
+use App\Exceptions\VoidConfirmationRequiredException;
 use App\Models\GoodsReceipt;
 use App\Models\GoodsReceiptLine;
 use App\Models\Item;
+use App\Models\Journal;
+use App\Models\JournalLine;
 use App\Models\PurchaseOrder;
 use App\Models\PurchaseOrderLine;
+use App\Models\SupplierPaymentAllocation;
 use App\Models\TaxRate;
 use App\Models\Uom;
 use App\Models\UomConversion;
@@ -117,6 +121,10 @@ class PurchaseService
         }
 
         return DB::transaction(function () use ($po, $receivedLines, $date, $paymentMethod, $notes, $cashAccountCode) {
+            if ($po->fresh()->status === 'cancelled') {
+                throw new RuntimeException("PO #{$po->id} sudah dibatalkan.");
+            }
+
             $warehouse = $po->warehouse;
 
             $receipt = new GoodsReceipt([
@@ -213,10 +221,150 @@ class PurchaseService
      * Total qty received so far against a single PO line, in the item's
      * base_uom (i.e. summed straight from goods_receipt_lines.qty).
      */
+    /**
+     * Hal-hal yang membuat pembatalan nota "melanggar aturan" -- tidak
+     * diblokir, tapi wajib dikonfirmasi eksplisit (lihat voidGoodsReceipt()):
+     * - paid: nota kredit sudah (sebagian) dibayar. Setelah batal, hutang ke
+     *   supplier jadi minus sebesar itu (supplier berhutang ke toko).
+     * - short_stock: sebagian barangnya sudah terjual/terpakai, stok akan
+     *   jadi minus setelah ditarik.
+     *
+     * @return array{paid: string, short_stock: array<int, array{name: string, qty: string, stock: string}>}
+     */
+    public function voidWarnings(GoodsReceipt $receipt): array
+    {
+        $receipt->loadMissing('lines.item', 'warehouse');
+
+        $paid = bcadd((string) SupplierPaymentAllocation::where('goods_receipt_id', $receipt->id)->sum('amount'), '0', self::SCALE);
+
+        $qtyByItem = $receipt->lines->groupBy('item_id')
+            ->map(fn ($lines) => $lines->reduce(fn (string $carry, GoodsReceiptLine $line) => bcadd($carry, (string) $line->qty, self::SCALE), '0'));
+
+        $shortStock = [];
+        foreach ($qtyByItem as $itemId => $qty) {
+            $item = $receipt->lines->firstWhere('item_id', $itemId)->item;
+            $stock = $this->inventory->currentStock($item, $receipt->warehouse);
+            if (bccomp($stock, $qty, self::SCALE) < 0) {
+                $shortStock[] = ['name' => $item->name, 'qty' => $qty, 'stock' => $stock];
+            }
+        }
+
+        return ['paid' => $paid, 'short_stock' => $shortStock];
+    }
+
+    public function hasVoidWarnings(array $warnings): bool
+    {
+        return bccomp($warnings['paid'], '0', self::SCALE) > 0 || $warnings['short_stock'] !== [];
+    }
+
+    /**
+     * Batalkan satu nota penerimaan barang: stok ditarik kembali dengan
+     * harga di nota (InventoryService::recordOutboundAtCost()), jurnal
+     * penerimaannya dibalik, status PO dihitung ulang. Nota & jurnal
+     * aslinya tetap ada -- pembalik bersource nota yang sama, bertanggal
+     * sama dengan nota (pola sama SaleService::voidSale()), jadi laporan
+     * periode itu bersih.
+     *
+     * Pelanggaran aturan (voidWarnings()) ditolak dengan
+     * VoidConfirmationRequiredException kecuali $confirmed.
+     */
+    public function voidGoodsReceipt(GoodsReceipt $receipt, string $reason, ?int $userId, bool $confirmed = false): GoodsReceipt
+    {
+        return DB::transaction(function () use ($receipt, $reason, $userId, $confirmed) {
+            $locked = GoodsReceipt::whereKey($receipt->id)->lockForUpdate()->firstOrFail();
+
+            if ($locked->voided_at !== null) {
+                throw new RuntimeException("Penerimaan #{$locked->id} sudah dibatalkan.");
+            }
+
+            if (! $confirmed && $this->hasVoidWarnings($this->voidWarnings($locked))) {
+                throw new VoidConfirmationRequiredException(
+                    "Penerimaan #{$locked->id} sudah dibayar atau barangnya sudah terpakai. Konfirmasi pembatalan diperlukan."
+                );
+            }
+
+            $locked->loadMissing('lines.item', 'warehouse', 'purchaseOrder');
+            $date = $locked->date;
+
+            foreach ($locked->lines->sortBy('item_id') as $line) {
+                $this->inventory->recordOutboundAtCost($line->item, $locked->warehouse, $line->qty, $line->unit_cost, $locked, $date);
+            }
+
+            $this->reverseJournals($locked, 'Penerimaan barang%', "Pembatalan penerimaan barang PO #{$locked->purchase_order_id}", $date);
+
+            $locked->update([
+                'voided_at' => now(),
+                'voided_by_user_id' => $userId,
+                'void_reason' => $reason,
+            ]);
+
+            $this->updatePurchaseOrderStatus($locked->purchaseOrder->fresh());
+
+            return $locked->fresh('lines');
+        });
+    }
+
+    /**
+     * Batalkan PO yang belum punya penerimaan aktif. PO yang sudah ada
+     * penerimaannya harus dibatalkan per nota dulu (voidGoodsReceipt()) --
+     * PO sendiri tidak pernah menyentuh stok/jurnal, jadi cukup ganti status.
+     */
+    public function cancelPurchaseOrder(PurchaseOrder $po, string $reason, ?int $userId): PurchaseOrder
+    {
+        return DB::transaction(function () use ($po, $reason, $userId) {
+            $locked = PurchaseOrder::whereKey($po->id)->lockForUpdate()->firstOrFail();
+
+            if ($locked->status === 'cancelled') {
+                throw new RuntimeException("PO #{$locked->id} sudah dibatalkan.");
+            }
+
+            if (GoodsReceipt::where('purchase_order_id', $locked->id)->whereNull('voided_at')->exists()) {
+                throw new RuntimeException("PO #{$locked->id} masih punya penerimaan barang. Batalkan penerimaannya dulu.");
+            }
+
+            $locked->update([
+                'status' => 'cancelled',
+                'cancelled_at' => now(),
+                'cancelled_by_user_id' => $userId,
+                'cancel_reason' => $reason,
+            ]);
+
+            return $locked;
+        });
+    }
+
+    /**
+     * Balik semua jurnal bersource $source yang memo-nya cocok $memoLike --
+     * BUKAN jurnal "Koreksi HPP stok minus" yang ikut bersource sama: koreksi
+     * itu sudah diimbangi oleh recordOutboundAtCost() saat stok ditarik.
+     */
+    private function reverseJournals(GoodsReceipt $source, string $memoLike, string $memo, DateTimeInterface|string $date): void
+    {
+        $journals = Journal::where('source_type', $source->getMorphClass())
+            ->where('source_id', $source->id)
+            ->where('memo', 'like', $memoLike)
+            ->with('lines.account')
+            ->get();
+
+        foreach ($journals as $journal) {
+            $this->posting->post(
+                lines: $journal->lines->map(fn (JournalLine $line) => [
+                    'account' => $line->account,
+                    'debit' => $line->credit,
+                    'credit' => $line->debit,
+                ])->all(),
+                date: $date,
+                source: $source,
+                memo: $memo,
+            );
+        }
+    }
+
     public function receivedQtyInBaseUom(PurchaseOrderLine $line): string
     {
         return GoodsReceiptLine::query()
             ->where('purchase_order_line_id', $line->id)
+            ->whereHas('goodsReceipt', fn ($query) => $query->whereNull('voided_at'))
             ->get()
             ->reduce(fn ($carry, GoodsReceiptLine $grLine) => bcadd($carry, $grLine->qty, self::SCALE), '0');
     }
@@ -284,6 +432,7 @@ class PurchaseService
         $po->loadMissing('lines.item', 'lines.purchaseUom');
 
         $fullyReceived = true;
+        $anyReceived = false;
 
         foreach ($po->lines as $line) {
             $factor = $this->resolveUomFactor($line->item, $line->purchaseUom);
@@ -293,9 +442,18 @@ class PurchaseService
             if (bccomp($receivedQtyInBaseUom, $orderedQtyInBaseUom, self::SCALE) < 0) {
                 $fullyReceived = false;
             }
+
+            if (bccomp($receivedQtyInBaseUom, '0', self::SCALE) > 0) {
+                $anyReceived = true;
+            }
         }
 
-        $po->update(['status' => $fullyReceived ? 'received' : 'partial']);
+        // 'open' lagi kalau semua penerimaannya dibatalkan (voidGoodsReceipt()).
+        $po->update(['status' => match (true) {
+            $fullyReceived => 'received',
+            $anyReceived => 'partial',
+            default => 'open',
+        }]);
     }
 
     /**

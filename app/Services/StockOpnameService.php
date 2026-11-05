@@ -2,7 +2,12 @@
 
 namespace App\Services;
 
+use App\Exceptions\StockChangedSinceOpnameStartedException;
+use App\Exceptions\VoidConfirmationRequiredException;
 use App\Models\Item;
+use App\Models\Journal;
+use App\Models\JournalLine;
+use App\Models\StockMovement;
 use App\Models\StockOpname;
 use App\Models\Warehouse;
 use DateTimeInterface;
@@ -75,10 +80,15 @@ class StockOpnameService
      *
      * The diff is computed against LIVE stock at posting time — not the
      * system_qty snapshotted in startOpname() — so the resulting running_qty
-     * is guaranteed to equal counted_qty exactly even if other transactions
-     * moved stock while the physical count was in progress. system_qty
-     * stays untouched as an audit record of what was expected when counting
-     * began; it is not the basis for diff_qty.
+     * is guaranteed to equal counted_qty exactly. system_qty is overwritten
+     * with that live stock, so the stored line always reads
+     * counted - system = diff.
+     *
+     * Itu hanya benar kalau barang dihitung SETELAH semua mutasi yang sudah
+     * tercatat. Kalau stok item bergerak sejak draft dibuat (lihat
+     * stockMovementsSinceStart()), posting ditolak dengan
+     * StockChangedSinceOpnameStartedException kecuali $confirmStockChanged
+     * true -- kasir menyatakan sudah menghitung ulang setelah mutasi itu.
      *
      * Surplus is recorded via InventoryService::recordInbound() valued at
      * the item's current running_average_cost, so it never shifts the
@@ -88,9 +98,9 @@ class StockOpnameService
      *
      * @param  array<int, int|float|string>  $countedQuantities  [stock_opname_line_id => counted_qty]
      */
-    public function postOpname(StockOpname $opname, array $countedQuantities, DateTimeInterface|string $date): StockOpname
+    public function postOpname(StockOpname $opname, array $countedQuantities, DateTimeInterface|string $date, bool $confirmStockChanged = false): StockOpname
     {
-        return DB::transaction(function () use ($opname, $countedQuantities, $date) {
+        return DB::transaction(function () use ($opname, $countedQuantities, $date, $confirmStockChanged) {
             // Kunci baris opname ITU SENDIRI dulu, lalu baca ulang statusnya
             // di dalam lock — menutup race terpisah di mana dua panggilan
             // postOpname() yang genuinely konkuren untuk OPNAME YANG SAMA
@@ -107,6 +117,19 @@ class StockOpnameService
 
             $opname->loadMissing('lines.item');
             $warehouse = $opname->warehouse;
+
+            if (! $confirmStockChanged) {
+                $moved = collect($this->stockMovementsSinceStart($opname))
+                    ->filter(fn (array $m) => bccomp($m['qty_in'], '0', self::SCALE) !== 0 || bccomp($m['qty_out'], '0', self::SCALE) !== 0);
+
+                if ($moved->isNotEmpty()) {
+                    $names = $opname->lines->whereIn('item_id', $moved->keys())->map(fn ($line) => $line->item->name)->implode(', ');
+
+                    throw new StockChangedSinceOpnameStartedException(
+                        "Stok berubah sejak opname dibuat ({$names}). Hitung ulang barang tersebut, lalu centang konfirmasi sebelum posting."
+                    );
+                }
+            }
 
             $totalSurplusValue = '0';
             $totalShrinkageValue = '0';
@@ -142,6 +165,7 @@ class StockOpnameService
                 $diff = bcsub($countedQty, $liveStock, self::SCALE);
 
                 $line->update([
+                    'system_qty' => $liveStock,
                     'counted_qty' => $countedQty,
                     'diff_qty' => $diff,
                 ]);
@@ -167,6 +191,129 @@ class StockOpnameService
 
             return $opname->fresh('lines');
         });
+    }
+
+    /**
+     * Item yang stoknya akan jadi minus kalau opname yang SUDAH diposting
+     * ini dibatalkan -- surplus yang dulu ditambahkan ternyata sudah
+     * terjual. Bukan larangan, wajib konfirmasi (lihat cancelOpname()).
+     *
+     * @return array<int, array{name: string, qty: string, stock: string}>
+     */
+    public function cancelWarnings(StockOpname $opname): array
+    {
+        if ($opname->status !== 'completed') {
+            return [];
+        }
+
+        $warnings = [];
+        $surplus = $opname->stockMovements()->with('item')->where('qty_in', '>', 0)->get()->groupBy('item_id');
+
+        foreach ($surplus as $movements) {
+            $item = $movements->first()->item;
+            $qty = $movements->reduce(fn (string $carry, StockMovement $m) => bcadd($carry, (string) $m->qty_in, self::SCALE), '0');
+            $stock = $this->inventory->currentStock($item, $opname->warehouse);
+
+            if (bccomp($stock, $qty, self::SCALE) < 0) {
+                $warnings[] = ['name' => $item->name, 'qty' => $qty, 'stock' => $stock];
+            }
+        }
+
+        return $warnings;
+    }
+
+    /**
+     * Batalkan stock opname.
+     * - Draft: cukup ganti status, belum ada stok/jurnal yang tersentuh.
+     * - Sudah diposting: setiap mutasinya dibalik dengan harga yang sama
+     *   (surplus ditarik lewat recordOutboundAtCost(), susut dikembalikan
+     *   lewat recordInbound()) dan jurnal penyesuaiannya dibalik, bertanggal
+     *   sama dengan opname -- pola sama PurchaseService::voidGoodsReceipt().
+     *
+     * Kalau pembatalan membuat stok minus (cancelWarnings()), ditolak
+     * dengan VoidConfirmationRequiredException kecuali $confirmed.
+     */
+    public function cancelOpname(StockOpname $opname, ?string $reason, ?int $userId, bool $confirmed = false): StockOpname
+    {
+        return DB::transaction(function () use ($opname, $reason, $userId, $confirmed) {
+            $locked = StockOpname::query()->whereKey($opname->id)->lockForUpdate()->firstOrFail();
+
+            if ($locked->status === 'cancelled') {
+                throw new RuntimeException("Stock opname #{$locked->id} sudah dibatalkan.");
+            }
+
+            if ($locked->status === 'completed') {
+                if (! $confirmed && $this->cancelWarnings($locked) !== []) {
+                    throw new VoidConfirmationRequiredException(
+                        "Sebagian stok tambahan dari opname #{$locked->id} sudah terpakai. Konfirmasi pembatalan diperlukan."
+                    );
+                }
+
+                $date = $locked->date;
+                $movements = $locked->stockMovements()->with('item')->orderBy('item_id')->orderBy('id')->get();
+
+                foreach ($movements as $movement) {
+                    if (bccomp((string) $movement->qty_in, '0', self::SCALE) > 0) {
+                        $this->inventory->recordOutboundAtCost($movement->item, $locked->warehouse, $movement->qty_in, $movement->unit_cost, $locked, $date);
+                    }
+
+                    if (bccomp((string) $movement->qty_out, '0', self::SCALE) > 0) {
+                        $this->inventory->recordInbound($movement->item, $locked->warehouse, $movement->qty_out, $movement->unit_cost, $locked, $date);
+                    }
+                }
+
+                $journals = Journal::where('source_type', $locked->getMorphClass())
+                    ->where('source_id', $locked->id)
+                    ->where('memo', 'like', 'Penyesuaian stock opname%')
+                    ->with('lines.account')
+                    ->get();
+
+                foreach ($journals as $journal) {
+                    $this->posting->post(
+                        lines: $journal->lines->map(fn (JournalLine $line) => [
+                            'account' => $line->account,
+                            'debit' => $line->credit,
+                            'credit' => $line->debit,
+                        ])->all(),
+                        date: $date,
+                        source: $locked,
+                        memo: "Pembatalan stock opname #{$locked->id}",
+                    );
+                }
+            }
+
+            $locked->update([
+                'status' => 'cancelled',
+                'cancelled_at' => now(),
+                'cancelled_by_user_id' => $userId,
+                'cancel_reason' => $reason,
+            ]);
+
+            return $locked->fresh('lines');
+        });
+    }
+
+    /**
+     * Mutasi stok tiap item opname yang tercatat SETELAH draft dibuat (di
+     * luar mutasi opname ini sendiri) -- dipakai untuk menolak posting
+     * (postOpname) dan untuk peringatan di halaman draft.
+     *
+     * @return array<int, array{qty_in: string, qty_out: string}> [item_id => total]
+     */
+    public function stockMovementsSinceStart(StockOpname $opname): array
+    {
+        $itemIds = $opname->lines()->pluck('item_id');
+
+        return StockMovement::query()
+            ->where('warehouse_id', $opname->warehouse_id)
+            ->whereIn('item_id', $itemIds)
+            ->where('created_at', '>', $opname->created_at)
+            ->whereNot(fn ($q) => $q->where('source_type', $opname->getMorphClass())->where('source_id', $opname->id))
+            ->groupBy('item_id')
+            ->selectRaw('item_id, SUM(qty_in) as qty_in, SUM(qty_out) as qty_out')
+            ->get()
+            ->mapWithKeys(fn ($row) => [$row->item_id => ['qty_in' => (string) $row->qty_in, 'qty_out' => (string) $row->qty_out]])
+            ->all();
     }
 
     private function postAdjustmentJournal(StockOpname $opname, string $surplusValue, string $shrinkageValue, DateTimeInterface|string $date): void

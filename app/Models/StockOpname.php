@@ -8,19 +8,25 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\MorphMany;
 
-#[Fillable(['warehouse_id', 'date', 'status'])]
+#[Fillable(['warehouse_id', 'date', 'status', 'cancelled_at', 'cancelled_by_user_id', 'cancel_reason'])]
 class StockOpname extends Model
 {
     protected function casts(): array
     {
         return [
             'date' => 'date',
+            'cancelled_at' => 'datetime',
         ];
     }
 
     public function warehouse(): BelongsTo
     {
         return $this->belongsTo(Warehouse::class);
+    }
+
+    public function cancelledBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'cancelled_by_user_id');
     }
 
     public function lines(): HasMany

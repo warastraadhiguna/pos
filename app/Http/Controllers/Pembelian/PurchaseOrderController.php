@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Pembelian;
 
 use App\Http\Controllers\Controller;
+use App\Exceptions\VoidConfirmationRequiredException;
 use App\Models\GoodsReceipt;
 use App\Models\PurchaseOrder;
 use App\Models\PurchaseOrderLine;
@@ -130,18 +131,66 @@ class PurchaseOrderController extends Controller
         ]);
 
         $receipts = GoodsReceipt::where('purchase_order_id', $purchaseOrder->id)
-            ->with('lines.item')
+            ->with('lines.item', 'voidedBy:id,name')
             ->orderByDesc('id')
             ->get()
             ->map(fn (GoodsReceipt $receipt) => [
                 ...$receipt->toArray(),
                 'nota_status' => $this->payableReport->notaStatus($receipt),
+                // Untuk dialog konfirmasi "Batalkan Nota" -- lihat
+                // PurchaseService::voidWarnings().
+                'void_warnings' => $receipt->voided_at === null ? $this->purchases->voidWarnings($receipt) : null,
             ]);
 
         return Inertia::render('Pembelian/PurchaseOrders/Show', [
             'purchaseOrder' => $purchaseOrder,
             'lines' => $lines,
             'receipts' => $receipts,
+            'canCancel' => $purchaseOrder->status !== 'cancelled'
+                && $receipts->every(fn (array $receipt) => $receipt['voided_at'] !== null),
         ]);
+    }
+
+    /**
+     * Batalkan satu nota penerimaan -- lihat PurchaseService::voidGoodsReceipt().
+     * `confirm` wajib true kalau nota sudah dibayar / stoknya sudah terpakai;
+     * UI menampilkan peringatannya dulu (void_warnings di show()).
+     */
+    public function voidReceipt(Request $request, PurchaseOrder $purchaseOrder, GoodsReceipt $goodsReceipt): RedirectResponse
+    {
+        abort_unless($goodsReceipt->purchase_order_id === $purchaseOrder->id, 404);
+
+        $validated = $request->validate([
+            'reason' => ['required', 'string', 'max:255'],
+            'confirm' => ['sometimes', 'boolean'],
+        ]);
+
+        try {
+            $this->purchases->voidGoodsReceipt($goodsReceipt, $validated['reason'], $request->user()->id, $request->boolean('confirm'));
+        } catch (VoidConfirmationRequiredException $e) {
+            return Redirect::back()->with('error', $e->getMessage());
+        } catch (Throwable $e) {
+            report($e);
+
+            return Redirect::back()->with('error', 'Gagal membatalkan penerimaan: '.$e->getMessage());
+        }
+
+        return Redirect::route('pembelian.purchase-orders.show', $purchaseOrder)
+            ->with('success', "Penerimaan #{$goodsReceipt->id} dibatalkan. Stok dan jurnalnya sudah dibalik.");
+    }
+
+    public function cancel(Request $request, PurchaseOrder $purchaseOrder): RedirectResponse
+    {
+        $validated = $request->validate([
+            'reason' => ['required', 'string', 'max:255'],
+        ]);
+
+        try {
+            $this->purchases->cancelPurchaseOrder($purchaseOrder, $validated['reason'], $request->user()->id);
+        } catch (Throwable $e) {
+            return Redirect::back()->with('error', $e->getMessage());
+        }
+
+        return Redirect::route('pembelian.purchase-orders.show', $purchaseOrder)->with('success', "PO-{$purchaseOrder->id} dibatalkan.");
     }
 }

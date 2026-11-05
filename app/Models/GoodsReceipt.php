@@ -8,13 +8,14 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\MorphMany;
 
-#[Fillable(['purchase_order_id', 'warehouse_id', 'date', 'payment_method', 'cash_account_code', 'notes'])]
+#[Fillable(['purchase_order_id', 'warehouse_id', 'date', 'payment_method', 'cash_account_code', 'notes', 'voided_at', 'voided_by_user_id', 'void_reason'])]
 class GoodsReceipt extends Model
 {
     protected function casts(): array
     {
         return [
             'date' => 'date',
+            'voided_at' => 'datetime',
         ];
     }
 
@@ -26,6 +27,11 @@ class GoodsReceipt extends Model
     public function warehouse(): BelongsTo
     {
         return $this->belongsTo(Warehouse::class);
+    }
+
+    public function voidedBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'voided_by_user_id');
     }
 
     public function lines(): HasMany

@@ -18,9 +18,29 @@ class InventoryService
 {
     private const SCALE = 4;
 
+    private const ACCOUNT_HPP = '5-1000';
+
+    private readonly PostingService $posting;
+
+    // Opsional (default dibuat sendiri) -- PostingService tidak punya
+    // dependensi, dan banyak pemanggil (test, command) membuat
+    // `new InventoryService()` langsung.
+    public function __construct(?PostingService $posting = null)
+    {
+        $this->posting = $posting ?? new PostingService();
+    }
+
     /**
      * Record incoming stock and recompute the Moving Average cost:
      * new_avg = (running_qty * running_avg + qty_in * unit_cost) / (running_qty + qty_in).
+     *
+     * Kecuali stok SEBELUM barang masuk minus (barang terjual sebelum
+     * pembeliannya dicatat): rumus di atas lalu membagi dengan qty minus /
+     * mendekati nol dan menghasilkan rata-rata negatif atau membengkak
+     * (insiden produksi: Signature Lay Rp36.400/pcs padahal beli Rp5.600,
+     * Americano -Rp5.850). Untuk kasus itu rata-rata baru = unit_cost barang
+     * masuk, dan unit yang sudah terjual dengan rata-rata lama dikoreksi
+     * lewat jurnal HPP -- lihat postNegativeStockTrueUp().
      */
     public function recordInbound(
         Item $item,
@@ -39,7 +59,13 @@ class InventoryService
             $runningAvg = $last?->running_average_cost ?? '0';
 
             $newRunningQty = bcadd($runningQty, $qty, self::SCALE);
-            $newRunningAvg = $this->weightedAverage($runningQty, $runningAvg, $qty, $unitCost, $newRunningQty);
+
+            if (bccomp($runningQty, '0', self::SCALE) < 0) {
+                $newRunningAvg = $unitCost;
+                $this->postNegativeStockTrueUp($item, $runningQty, $runningAvg, $unitCost, $source, $date);
+            } else {
+                $newRunningAvg = $this->weightedAverage($runningQty, $runningAvg, $qty, $unitCost, $newRunningQty);
+            }
 
             $movement = new StockMovement([
                 'item_id' => $item->id,
@@ -104,6 +130,63 @@ class InventoryService
         });
     }
 
+    /**
+     * Tarik kembali stok yang dulu MASUK dengan harga tertentu -- pembatalan
+     * nota penerimaan (PurchaseService::voidGoodsReceipt()) atau pembatalan
+     * surplus opname (StockOpnameService::cancelOpname()). Beda dari
+     * recordOutbound(): nilai yang keluar = qty x $unitCost (harga saat
+     * masuk dulu, sama dengan yang dibalik jurnalnya), bukan qty x rata-rata,
+     * jadi rata-rata sisa stok dihitung ulang tanpa barang itu:
+     *   avg_baru = (qty x avg - qty_keluar x unit_cost) / qty_sisa.
+     *
+     * Kalau barangnya sudah terlanjur terjual (sisa <= 0) atau nilai sisanya
+     * jadi negatif, rumus itu tidak bermakna -- rata-rata di-set ke
+     * $unitCost dan selisihnya dibebankan ke HPP, pola sama dengan
+     * recordInbound() saat stok minus.
+     */
+    public function recordOutboundAtCost(
+        Item $item,
+        Warehouse $warehouse,
+        int|float|string $qty,
+        int|float|string $unitCost,
+        Model $source,
+        DateTimeInterface|string $date,
+    ): StockMovement {
+        return DB::transaction(function () use ($item, $warehouse, $qty, $unitCost, $source, $date) {
+            $qty = (string) $qty;
+            $unitCost = (string) $unitCost;
+
+            $last = $this->lockLedger($item, $warehouse);
+            $runningQty = $last?->running_qty ?? '0';
+            $runningAvg = $last?->running_average_cost ?? '0';
+
+            $newRunningQty = bcsub($runningQty, $qty, self::SCALE);
+            $remainingValue = bcsub(bcmul($runningQty, $runningAvg, self::SCALE), bcmul($qty, $unitCost, self::SCALE), self::SCALE);
+
+            if (bccomp($newRunningQty, '0', self::SCALE) > 0 && bccomp($remainingValue, '0', self::SCALE) >= 0) {
+                $newRunningAvg = bcdiv($remainingValue, $newRunningQty, self::SCALE);
+            } else {
+                $newRunningAvg = $unitCost;
+                $this->postNegativeStockTrueUp($item, $runningQty, $runningAvg, $unitCost, $source, $date);
+            }
+
+            $movement = new StockMovement([
+                'item_id' => $item->id,
+                'warehouse_id' => $warehouse->id,
+                'date' => $date,
+                'qty_in' => '0',
+                'qty_out' => $qty,
+                'unit_cost' => $unitCost,
+                'running_qty' => $newRunningQty,
+                'running_average_cost' => $newRunningAvg,
+            ]);
+            $movement->source()->associate($source);
+            $movement->save();
+
+            return $movement;
+        });
+    }
+
     public function currentStock(Item $item, Warehouse $warehouse): string
     {
         return $this->lastMovementQuery($item, $warehouse)->first()?->running_qty ?? '0.0000';
@@ -142,6 +225,54 @@ class InventoryService
     public function currentAverageCost(Item $item, Warehouse $warehouse): string
     {
         return $this->lastMovementQuery($item, $warehouse)->first()?->running_average_cost ?? '0.0000';
+    }
+
+    /**
+     * Unit yang terjual saat stok minus keluar dengan HPP = rata-rata lama
+     * (sering 0). Begitu barang masuk dengan harga sebenarnya, selisihnya
+     * dibebankan ke HPP: running_qty x (rata-rata lama - unit_cost), dengan
+     * running_qty negatif. Positif = HPP kurang dicatat (Dr HPP / Cr
+     * Persediaan), negatif = HPP kelebihan (dibalik).
+     *
+     * Ini juga yang menjaga saldo akun Persediaan tetap sama dengan nilai
+     * kartu stok (qty x rata-rata) setelah rata-rata di-reset ke unit_cost.
+     * Rumus yang sama berlaku untuk recordOutboundAtCost() (running_qty di
+     * sana positif): selisih nilai sisa stok vs kartu stok setelah reset.
+     *
+     * Item konsinyasi dilewati: nilainya tidak pernah masuk akun Persediaan
+     * (penjualannya mengkredit Hutang Konsinyasi, lihat SaleService).
+     */
+    private function postNegativeStockTrueUp(Item $item, string $runningQty, string $runningAvg, string $unitCost, Model $source, DateTimeInterface|string $date): void
+    {
+        if ($item->is_consignment) {
+            return;
+        }
+
+        $trueUp = bcmul($runningQty, bcsub($runningAvg, $unitCost, self::SCALE), self::SCALE);
+        $comparison = bccomp($trueUp, '0', self::SCALE);
+
+        if ($comparison === 0) {
+            return;
+        }
+
+        $amount = $comparison > 0 ? $trueUp : bcmul($trueUp, '-1', self::SCALE);
+        $inventoryAccount = $item->inventoryAccount->code;
+        $lines = $comparison > 0
+            ? [
+                ['account' => self::ACCOUNT_HPP, 'debit' => $amount, 'credit' => 0],
+                ['account' => $inventoryAccount, 'debit' => 0, 'credit' => $amount],
+            ]
+            : [
+                ['account' => $inventoryAccount, 'debit' => $amount, 'credit' => 0],
+                ['account' => self::ACCOUNT_HPP, 'debit' => 0, 'credit' => $amount],
+            ];
+
+        $this->posting->post(
+            lines: $lines,
+            date: $date,
+            source: $source,
+            memo: "Koreksi HPP stok minus {$item->sku}",
+        );
     }
 
     private function weightedAverage(string $runningQty, string $runningAvg, string $qtyIn, string $unitCost, string $newRunningQty): string

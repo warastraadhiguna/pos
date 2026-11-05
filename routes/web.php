@@ -198,6 +198,8 @@ Route::middleware(['auth', 'verified', 'permission:pembelian.manage'])->prefix('
     Route::resource('purchase-orders', PurchaseOrderController::class)->only(['index', 'create', 'store', 'show']);
     Route::get('purchase-orders/{purchaseOrder}/receive', [GoodsReceiptController::class, 'create'])->name('purchase-orders.receive.create');
     Route::post('purchase-orders/{purchaseOrder}/receive', [GoodsReceiptController::class, 'store'])->name('purchase-orders.receive.store');
+    Route::post('purchase-orders/{purchaseOrder}/cancel', [PurchaseOrderController::class, 'cancel'])->name('purchase-orders.cancel');
+    Route::post('purchase-orders/{purchaseOrder}/receipts/{goodsReceipt}/void', [PurchaseOrderController::class, 'voidReceipt'])->name('purchase-orders.receipts.void');
     Route::get('supplier-payments/summary', [SupplierPaymentController::class, 'summary'])->name('supplier-payments.summary');
     Route::get('supplier-payments/fifo-preview', [SupplierPaymentController::class, 'fifoPreview'])->name('supplier-payments.fifo-preview');
     Route::get('supplier-payments', [SupplierPaymentController::class, 'index'])->name('supplier-payments.index');
@@ -271,6 +273,7 @@ Route::middleware(['auth', 'verified', 'permission:stock-opname.manage'])->prefi
     Route::post('/', [StockOpnameController::class, 'store'])->name('store');
     Route::get('/{stockOpname}', [StockOpnameController::class, 'show'])->name('show');
     Route::post('/{stockOpname}/post', [StockOpnameController::class, 'post'])->name('post');
+    Route::post('/{stockOpname}/cancel', [StockOpnameController::class, 'cancel'])->name('cancel');
 });
 
 // Multi-Cabang Lapisan 2 -- "Distribusi Stok" (pusat->cabang). Dokumen

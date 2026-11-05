@@ -51,7 +51,8 @@ class PurchaseItemHistoryController extends Controller
 
         $lines = GoodsReceiptLine::query()
             ->whereHas('goodsReceipt', function ($q) use ($dateFrom, $dateTo, $supplierId, $paymentMethod) {
-                $q->whereDate('date', '>=', $dateFrom)
+                $q->whereNull('voided_at')
+                    ->whereDate('date', '>=', $dateFrom)
                     ->whereDate('date', '<=', $dateTo)
                     ->when($paymentMethod, fn ($sq) => $sq->where('payment_method', $paymentMethod))
                     ->when($supplierId, fn ($sq) => $sq->whereHas('purchaseOrder', fn ($pq) => $pq->where('supplier_id', $supplierId)));

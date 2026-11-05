@@ -2,9 +2,12 @@
 
 namespace App\Http\Controllers;
 
+use App\Exceptions\StockChangedSinceOpnameStartedException;
+use App\Exceptions\VoidConfirmationRequiredException;
 use App\Models\Item;
 use App\Models\StockOpname;
 use App\Models\Warehouse;
+use App\Services\InventoryService;
 use App\Services\StockOpnameService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -16,7 +19,10 @@ use Throwable;
 
 class StockOpnameController extends Controller
 {
-    public function __construct(private readonly StockOpnameService $opnames) {}
+    public function __construct(
+        private readonly StockOpnameService $opnames,
+        private readonly InventoryService $inventory,
+    ) {}
 
     public function index(): Response
     {
@@ -60,10 +66,24 @@ class StockOpnameController extends Controller
 
     public function show(StockOpname $stockOpname): Response
     {
-        $stockOpname->load(['warehouse', 'lines.item.baseUom']);
+        $stockOpname->load(['warehouse', 'lines.item.baseUom', 'cancelledBy:id,name']);
+
+        // Hanya untuk draft: stok TERKINI (basis selisih saat posting) dan
+        // mutasi sejak draft dibuat, supaya kasir tahu barang mana yang
+        // harus dihitung ulang -- lihat StockOpnameService::postOpname().
+        $isDraft = $stockOpname->status === 'draft';
 
         return Inertia::render('StockOpname/Show', [
             'stockOpname' => $stockOpname,
+            'liveStock' => $isDraft
+                ? $stockOpname->lines->mapWithKeys(fn ($line) => [
+                    $line->item_id => $this->inventory->currentStock($line->item, $stockOpname->warehouse),
+                ])
+                : (object) [],
+            'movementsSinceStart' => $isDraft ? (object) $this->opnames->stockMovementsSinceStart($stockOpname) : (object) [],
+            // Untuk dialog konfirmasi "Batalkan Opname" -- lihat
+            // StockOpnameService::cancelWarnings().
+            'cancelWarnings' => $this->opnames->cancelWarnings($stockOpname),
         ]);
     }
 
@@ -77,6 +97,7 @@ class StockOpnameController extends Controller
                 Rule::exists('stock_opname_lines', 'id')->where('stock_opname_id', $stockOpname->id),
             ],
             'lines.*.counted_qty' => ['required', 'numeric', 'min:0'],
+            'confirm_stock_changed' => ['boolean'],
         ]);
 
         $countedQuantities = collect($validated['lines'])
@@ -84,7 +105,9 @@ class StockOpnameController extends Controller
             ->all();
 
         try {
-            $this->opnames->postOpname($stockOpname, $countedQuantities, $validated['date']);
+            $this->opnames->postOpname($stockOpname, $countedQuantities, $validated['date'], $request->boolean('confirm_stock_changed'));
+        } catch (StockChangedSinceOpnameStartedException $e) {
+            return Redirect::back()->with('error', $e->getMessage());
         } catch (Throwable $e) {
             report($e);
 
@@ -92,5 +115,30 @@ class StockOpnameController extends Controller
         }
 
         return Redirect::route('stock-opname.show', $stockOpname)->with('success', 'Stock opname berhasil diposting.');
+    }
+
+    /**
+     * Batalkan opname -- lihat StockOpnameService::cancelOpname(). Alasan
+     * wajib untuk opname yang sudah diposting (menulis jurnal pembalik);
+     * `confirm` wajib true kalau pembatalan membuat stok minus.
+     */
+    public function cancel(Request $request, StockOpname $stockOpname): RedirectResponse
+    {
+        $validated = $request->validate([
+            'reason' => [Rule::requiredIf($stockOpname->status === 'completed'), 'nullable', 'string', 'max:255'],
+            'confirm' => ['sometimes', 'boolean'],
+        ]);
+
+        try {
+            $this->opnames->cancelOpname($stockOpname, $validated['reason'] ?? null, $request->user()->id, $request->boolean('confirm'));
+        } catch (VoidConfirmationRequiredException $e) {
+            return Redirect::back()->with('error', $e->getMessage());
+        } catch (Throwable $e) {
+            report($e);
+
+            return Redirect::back()->with('error', 'Gagal membatalkan stock opname: '.$e->getMessage());
+        }
+
+        return Redirect::route('stock-opname.show', $stockOpname)->with('success', 'Stock opname dibatalkan.');
     }
 }

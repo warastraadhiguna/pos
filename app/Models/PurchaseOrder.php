@@ -7,7 +7,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
-#[Fillable(['supplier_id', 'warehouse_id', 'date', 'status', 'subtotal', 'tax_total', 'grand_total', 'notes'])]
+#[Fillable(['supplier_id', 'warehouse_id', 'date', 'status', 'subtotal', 'tax_total', 'grand_total', 'notes', 'cancelled_at', 'cancelled_by_user_id', 'cancel_reason'])]
 class PurchaseOrder extends Model
 {
     protected function casts(): array
@@ -17,6 +17,7 @@ class PurchaseOrder extends Model
             'subtotal' => 'decimal:4',
             'tax_total' => 'decimal:4',
             'grand_total' => 'decimal:4',
+            'cancelled_at' => 'datetime',
         ];
     }
 

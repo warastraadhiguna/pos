@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Exceptions\StockChangedSinceOpnameStartedException;
 use App\Models\Account;
 use App\Models\Item;
 use App\Models\Journal;
@@ -293,6 +294,56 @@ class StockOpnameServiceTest extends TestCase
         $this->assertSame('draft', $opname->fresh()->status);
         $this->assertSame('100.0000', $this->inventory->currentStock($itemA, $this->warehouse));
         $this->assertSame($stockMovementCountBefore, StockMovement::count());
+        $this->assertSame(0, Journal::count());
+    }
+
+    public function test_posting_is_refused_when_stock_moved_after_the_opname_was_started(): void
+    {
+        // Insiden Pocari: dihitung 19 saat draft dibuat, 96 masuk setelahnya.
+        $item = $this->makeStockedItem('POCARI');
+        $opname = $this->opnames->startOpname([
+            'warehouse_id' => $this->warehouse->id,
+            'date' => '2026-10-01',
+            'item_ids' => [$item->id],
+        ]);
+
+        $this->travel(30)->minutes();
+        $this->inventory->recordInbound($item, $this->warehouse, 96, 5902, $this->makeSource(), '2026-10-01');
+
+        $this->assertSame(['qty_in' => '96.0000', 'qty_out' => '0.0000'], $this->opnames->stockMovementsSinceStart($opname)[$item->id]);
+
+        try {
+            $this->opnames->postOpname($opname, [$opname->lines->first()->id => 19], '2026-10-05');
+            $this->fail('Posting seharusnya ditolak.');
+        } catch (StockChangedSinceOpnameStartedException $e) {
+            $this->assertStringContainsString('POCARI', $e->getMessage());
+        }
+
+        // Tidak ada yang berubah -- stok tetap 96, opname tetap draft.
+        $this->assertSame('96.0000', $this->inventory->currentStock($item, $this->warehouse));
+        $this->assertSame('draft', $opname->fresh()->status);
+        $this->assertSame(0, Journal::count());
+    }
+
+    public function test_posting_with_confirmation_uses_live_stock_and_records_it_as_system_qty(): void
+    {
+        $item = $this->makeStockedItem('ALANG');
+        $opname = $this->opnames->startOpname([
+            'warehouse_id' => $this->warehouse->id,
+            'date' => '2026-10-26',
+            'item_ids' => [$item->id],
+        ]);
+
+        $this->travel(30)->minutes();
+        $this->inventory->recordInbound($item, $this->warehouse, 7, 6800, $this->makeSource(), '2026-10-26');
+
+        // Kasir menghitung ulang SETELAH 7 pcs masuk: fisik 7.
+        $posted = $this->opnames->postOpname($opname, [$opname->lines->first()->id => 7], '2026-10-28', confirmStockChanged: true);
+
+        $line = $posted->lines->first();
+        $this->assertSame(0, bccomp($line->system_qty, '7', 4));
+        $this->assertSame(0, bccomp($line->diff_qty, '0', 4));
+        $this->assertSame('completed', $posted->status);
         $this->assertSame(0, Journal::count());
     }
 

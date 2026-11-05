@@ -91,6 +91,7 @@ class SupplierPayableReportService
         $receipts = GoodsReceipt::query()
             ->whereHas('purchaseOrder', fn ($query) => $query->where('supplier_id', $supplierId))
             ->where('payment_method', 'credit')
+            ->whereNull('voided_at')
             ->when($asOfDate, fn ($query) => $query->where('date', '<=', $asOfDate))
             ->orderBy('date')
             ->orderBy('id')
@@ -114,6 +115,18 @@ class SupplierPayableReportService
      */
     public function notaStatus(GoodsReceipt $receipt, ?int $hutangAccountId = null): array
     {
+        if ($receipt->voided_at !== null) {
+            return [
+                'goods_receipt_id' => $receipt->id,
+                'purchase_order_id' => $receipt->purchase_order_id,
+                'date' => (string) $receipt->date,
+                'nota_total' => '0.0000',
+                'allocated' => '0.0000',
+                'remaining' => '0.0000',
+                'status' => 'dibatalkan',
+            ];
+        }
+
         if ($receipt->payment_method !== 'credit') {
             return [
                 'goods_receipt_id' => $receipt->id,
@@ -196,7 +209,10 @@ class SupplierPayableReportService
             ->where('journals.source_type', GoodsReceipt::class)
             ->where('journal_lines.account_id', $hutangAccountId)
             ->when($asOfDate, fn ($query) => $query->where('journals.date', '<=', $asOfDate))
-            ->selectRaw('purchase_orders.supplier_id as supplier_id, SUM(journal_lines.credit) as total')
+            // credit - debit: jurnal pembalik nota yang dibatalkan
+            // (PurchaseService::voidGoodsReceipt()) bersource nota yang sama
+            // dan mendebit 2-1000, jadi otomatis menetralkan hutangnya.
+            ->selectRaw('purchase_orders.supplier_id as supplier_id, SUM(journal_lines.credit - journal_lines.debit) as total')
             ->groupBy('purchase_orders.supplier_id')
             ->get()
             ->keyBy('supplier_id');
