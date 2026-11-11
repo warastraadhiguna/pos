@@ -224,22 +224,22 @@ export default function Form({ item, uoms, itemCategories }) {
                                 </div>
                             </div>
 
-                            {isCostOnly && (
-                                <div>
-                                    <InputLabel
-                                        htmlFor="standard_cost"
-                                        value="Standar Cost"
-                                    />
-                                    <NumberInput
-                                        id="standard_cost"
-                                        maxDecimals={4}
-                                        className="mt-1 block w-full"
-                                        value={data.standard_cost}
-                                        onChange={(plain) =>
-                                            setData('standard_cost', plain)
-                                        }
-                                        required
-                                    />
+                            <div>
+                                <InputLabel
+                                    htmlFor="standard_cost"
+                                    value={isCostOnly ? 'Standar Cost' : 'HPP Standar (perkiraan harga beli)'}
+                                />
+                                <NumberInput
+                                    id="standard_cost"
+                                    maxDecimals={4}
+                                    className="mt-1 block w-full"
+                                    value={data.standard_cost}
+                                    onChange={(plain) =>
+                                        setData('standard_cost', plain)
+                                    }
+                                    required
+                                />
+                                {isCostOnly ? (
                                     <p className="mt-1 text-xs text-gray-500">
                                         Perkiraan harga pokok per unit,
                                         dipakai sebagai HPP setiap kali item
@@ -247,12 +247,27 @@ export default function Form({ item, uoms, itemCategories }) {
                                         harga beli sungguhan (lihat
                                         keterangan Tipe Costing di atas).
                                     </p>
-                                    <InputError
-                                        className="mt-2"
-                                        message={errors.standard_cost}
-                                    />
-                                </div>
-                            )}
+                                ) : (
+                                    <p className="mt-1 text-xs text-gray-500">
+                                        Dipakai sebagai HPP sementara kalau item
+                                        ini terjual SEBELUM pembeliannya
+                                        diinput (stok masih kosong). Setelah
+                                        pembelian diinput, HPP dikoreksi otomatis
+                                        ke harga beli sebenarnya.
+                                    </p>
+                                )}
+                                {!isCostOnly && Number(data.standard_cost || 0) === 0 && (
+                                    <p className="mt-1 text-xs text-amber-700">
+                                        Masih 0 — kalau item ini terjual sebelum
+                                        pembeliannya diinput, HPP-nya tercatat
+                                        Rp0 dan laba terlihat terlalu besar.
+                                    </p>
+                                )}
+                                <InputError
+                                    className="mt-2"
+                                    message={errors.standard_cost}
+                                />
+                            </div>
 
                             <div>
                                 <InputLabel value="Akun Persediaan" />

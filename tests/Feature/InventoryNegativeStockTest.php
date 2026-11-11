@@ -111,6 +111,55 @@ class InventoryNegativeStockTest extends TestCase
         $this->assertSame(0, Journal::where('memo', 'like', 'Koreksi HPP stok minus%')->count());
     }
 
+    public function test_selling_before_any_purchase_uses_the_standard_cost_instead_of_zero(): void
+    {
+        $item = $this->makeItem(['standard_cost' => 5600]);
+        $source = Outlet::create(['name' => 'Sumber']);
+
+        $hpp = $this->inventory->recordOutbound($item, $this->warehouse, 3, $source, '2026-11-01');
+
+        $this->assertSame('16800.0000', $hpp);
+        $this->assertSame('5600.0000', $this->inventory->currentAverageCost($item, $this->warehouse));
+        $this->assertSame(0, Journal::where('memo', 'like', 'Koreksi HPP stok minus%')->count());
+
+        // Pembelian masuk @6.000 -> hanya selisih 3 x 400 = 1.200 yang dikoreksi.
+        $this->inventory->recordInbound($item, $this->warehouse, 10, 6000, $source, '2026-11-03');
+
+        $lines = Journal::where('memo', 'like', 'Koreksi HPP stok minus%')->firstOrFail()->lines;
+        $this->assertSame(0, bccomp($lines->firstWhere('account_id', $this->hpp->id)->debit, '1200', 4));
+        $this->assertSame('6000.0000', $this->inventory->currentAverageCost($item, $this->warehouse));
+    }
+
+    public function test_after_stock_ran_out_the_last_purchase_price_is_used(): void
+    {
+        $item = $this->makeItem(['standard_cost' => 9999]);
+        $source = Outlet::create(['name' => 'Sumber']);
+
+        $this->inventory->recordInbound($item, $this->warehouse, 2, 7000, $source, '2026-11-01');
+        $this->inventory->recordOutbound($item, $this->warehouse, 2, $source, '2026-11-02');
+        $hpp = $this->inventory->recordOutbound($item, $this->warehouse, 1, $source, '2026-11-03');
+
+        // Rata-rata 7.000 masih tersimpan -> dipakai apa adanya, bukan HPP standar.
+        $this->assertSame('7000.0000', $hpp);
+    }
+
+    public function test_units_already_sold_at_zero_are_corrected_once_a_fallback_cost_exists(): void
+    {
+        $item = $this->makeItem();
+        $source = Outlet::create(['name' => 'Sumber']);
+
+        // Terjual 2 saat HPP standar belum diisi -> HPP 0.
+        $this->assertSame('0.0000', $this->inventory->recordOutbound($item, $this->warehouse, 2, $source, '2026-11-01'));
+
+        $item->update(['standard_cost' => 5000]);
+        $hpp = $this->inventory->recordOutbound($item->fresh(), $this->warehouse, 1, $source, '2026-11-02');
+
+        $this->assertSame('5000.0000', $hpp);
+        // 2 unit lama yang keluar Rp0 dikoreksi ke 5.000 sekaligus.
+        $lines = Journal::where('memo', 'like', 'Koreksi HPP stok minus%')->firstOrFail()->lines;
+        $this->assertSame(0, bccomp($lines->firstWhere('account_id', $this->hpp->id)->debit, '10000', 4));
+    }
+
     private function makeItem(array $overrides = []): Item
     {
         $pcs = Uom::where('code', 'PCS')->firstOrFail();

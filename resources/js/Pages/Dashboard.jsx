@@ -66,7 +66,66 @@ const statusLabel = {
     refunded: 'Refund',
 };
 
-export default function Dashboard({ stats, recentSales }) {
+const formatQty = (value) => Number(value).toLocaleString('id-ID', { maximumFractionDigits: 4 });
+
+// Item yang terjual sebelum pembeliannya diinput (lihat
+// DashboardController::negativeStockItems()). Ditampilkan 10 teratas
+// supaya Dashboard tidak memanjang; sisanya cukup jumlahnya.
+function NegativeStockCard({ items, canPurchase }) {
+    if (items.length === 0) return null;
+
+    return (
+        <div className="w-full overflow-x-auto overscroll-x-contain rounded-xl border border-amber-200 bg-amber-50 shadow-sm">
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-amber-100 px-6 py-4">
+                <div>
+                    <h4 className="font-semibold text-amber-900">
+                        Stok Minus ({items.length} item)
+                    </h4>
+                    <p className="text-sm text-amber-800">
+                        Sudah terjual tapi pembeliannya belum diinput. HPP-nya
+                        masih memakai harga sementara sampai pembelian diinput.
+                    </p>
+                </div>
+                {canPurchase && (
+                    <Link
+                        href={route('pembelian.purchase-orders.create')}
+                        className="text-sm font-medium text-primary hover:text-primary-dark"
+                    >
+                        Input Pembelian →
+                    </Link>
+                )}
+            </div>
+            <table className="min-w-full divide-y divide-amber-100">
+                <tbody className="divide-y divide-amber-100">
+                    {items.slice(0, 10).map((item) => (
+                        <tr key={`${item.id}-${item.warehouse}`}>
+                            <td className="whitespace-nowrap px-6 py-2 text-sm text-gray-900">
+                                {item.name}{' '}
+                                <span className="text-gray-400">({item.sku})</span>
+                            </td>
+                            <td className="whitespace-nowrap px-6 py-2 text-sm text-gray-500">
+                                {item.warehouse}
+                            </td>
+                            <td className="whitespace-nowrap px-6 py-2 text-right text-sm font-medium text-red-600">
+                                {formatQty(item.qty)} {item.uom}
+                            </td>
+                        </tr>
+                    ))}
+                    {items.length > 10 && (
+                        <tr>
+                            <td colSpan={3} className="px-6 py-2 text-sm text-amber-800">
+                                +{items.length - 10} item lainnya — lihat Laporan Stok.
+                            </td>
+                        </tr>
+                    )}
+                </tbody>
+            </table>
+        </div>
+    );
+}
+
+export default function Dashboard({ stats, recentSales, negativeStockItems = [] }) {
+    const canPurchase = usePage().props.auth.permissions.includes('pembelian.manage');
     const user = usePage().props.auth.user;
 
     const cards = [
@@ -175,6 +234,8 @@ export default function Dashboard({ stats, recentSales }) {
                             ))}
                         </div>
                     </div>
+
+                    <NegativeStockCard items={negativeStockItems} canPurchase={canPurchase} />
 
                     <div className="w-full overflow-x-auto overscroll-x-contain rounded-xl border border-gray-200 bg-white shadow-sm">
                         <div className="flex items-center justify-between border-b border-gray-100 px-6 py-4">

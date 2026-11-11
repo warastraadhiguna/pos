@@ -110,6 +110,21 @@ class InventoryService
             $runningQty = $last?->running_qty ?? '0';
             $runningAvg = $last?->running_average_cost ?? '0';
 
+            // Stok kosong/minus DAN belum punya harga pokok (item baru yang
+            // terjual sebelum pembeliannya diinput): jangan keluar dengan
+            // HPP 0 -- pakai harga cadangan (fallbackCost()). Unit yang
+            // dulu terlanjur keluar dengan rata-rata 0 ikut dikoreksi ke
+            // harga itu, supaya kartu stok tetap = buku besar; saat
+            // pembelian masuk, recordInbound() hanya mengoreksi selisih
+            // harga cadangan vs harga beli sebenarnya.
+            if (bccomp($runningQty, '0', self::SCALE) <= 0
+                && bccomp($runningAvg, '0', self::SCALE) <= 0
+                && ! $item->is_consignment
+                && ($fallback = $this->fallbackCost($item, $warehouse)) !== null) {
+                $this->postNegativeStockTrueUp($item, $runningQty, $runningAvg, $fallback, $source, $date);
+                $runningAvg = $fallback;
+            }
+
             $hpp = bcmul($qty, $runningAvg, self::SCALE);
             $newRunningQty = bcsub($runningQty, $qty, self::SCALE);
 
@@ -119,6 +134,7 @@ class InventoryService
                 'date' => $date,
                 'qty_in' => '0',
                 'qty_out' => $qty,
+                // $runningAvg di sini sudah harga cadangan kalau fallback aktif.
                 'unit_cost' => $runningAvg,
                 'running_qty' => $newRunningQty,
                 'running_average_cost' => $runningAvg,
@@ -225,6 +241,29 @@ class InventoryService
     public function currentAverageCost(Item $item, Warehouse $warehouse): string
     {
         return $this->lastMovementQuery($item, $warehouse)->first()?->running_average_cost ?? '0.0000';
+    }
+
+    /**
+     * Harga pokok cadangan untuk recordOutbound() saat item belum punya
+     * rata-rata: harga barang masuk terakhir yang bernilai (pembelian
+     * sebelumnya), atau HPP standar item kalau belum pernah ada sama sekali.
+     * Null kalau keduanya kosong -- HPP tetap 0 seperti sebelumnya.
+     */
+    private function fallbackCost(Item $item, Warehouse $warehouse): ?string
+    {
+        $lastInboundCost = StockMovement::query()
+            ->where('item_id', $item->id)
+            ->where('warehouse_id', $warehouse->id)
+            ->where('qty_in', '>', 0)
+            ->where('unit_cost', '>', 0)
+            ->orderByDesc('id')
+            ->value('unit_cost');
+
+        if ($lastInboundCost !== null) {
+            return (string) $lastInboundCost;
+        }
+
+        return bccomp((string) $item->standard_cost, '0', self::SCALE) > 0 ? (string) $item->standard_cost : null;
     }
 
     /**
