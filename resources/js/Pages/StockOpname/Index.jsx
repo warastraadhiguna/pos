@@ -1,6 +1,7 @@
+import OutletFilter from '@/Components/OutletFilter';
 import PrimaryButton from '@/Components/PrimaryButton';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
-import { Head, Link } from '@inertiajs/react';
+import { Head, Link, router } from '@inertiajs/react';
 
 const formatDate = (value) => String(value).slice(0, 10);
 
@@ -16,7 +17,11 @@ const statusClass = {
     cancelled: 'text-red-600',
 };
 
-export default function Index({ opnames }) {
+export default function Index({ opnames, outletId = null, outlets = [] }) {
+    const changeOutlet = (value) => {
+        router.get(route('stock-opname.index'), { outlet_id: value }, { preserveState: true, replace: true });
+    };
+
     return (
         <AuthenticatedLayout
             header={
@@ -29,8 +34,9 @@ export default function Index({ opnames }) {
 
             <div className="py-12">
                 <div className="mx-auto max-w-5xl space-y-4 sm:px-6 lg:px-8">
-                    <div className="flex justify-end">
-                        <Link href={route('stock-opname.create')}>
+                    <div className="flex flex-wrap items-end justify-between gap-4">
+                        <OutletFilter outlets={outlets} value={outletId} onChange={changeOutlet} />
+                        <Link href={route('stock-opname.create')} className="ml-auto">
                             <PrimaryButton>Buat Opname</PrimaryButton>
                         </Link>
                     </div>

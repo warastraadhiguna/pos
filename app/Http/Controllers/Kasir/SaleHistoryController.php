@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Kasir;
 
 use App\Exceptions\SaleAlreadyVoidedException;
 use App\Http\Controllers\Controller;
+use App\Models\Outlet;
 use App\Models\Sale;
 use App\Models\User;
 use App\Services\BranchService;
@@ -41,6 +42,7 @@ class SaleHistoryController extends Controller
             'search' => ['nullable', 'string', 'max:255'],
             'cashier_id' => ['nullable', 'integer'],
             'payment_method' => ['nullable', 'string', 'in:cash,qris'],
+            'outlet_id' => ['nullable', 'integer'],
         ]);
 
         // Riwayat penjualan dicek jauh lebih sering & bervolume lebih
@@ -52,8 +54,10 @@ class SaleHistoryController extends Controller
         $search = $filters['search'] ?? '';
         $cashierId = $filters['cashier_id'] ?? null;
         $paymentMethod = $filters['payment_method'] ?? null;
+        $outletId = $filters['outlet_id'] ?? null;
 
         $query = Sale::query()
+            ->when($outletId, fn ($q) => $q->where('outlet_id', $outletId))
             ->whereDate('date', '>=', $dateFrom)
             ->whereDate('date', '<=', $dateTo)
             ->when($cashierId, fn ($q) => $q->where('created_by_user_id', $cashierId))
@@ -103,7 +107,11 @@ class SaleHistoryController extends Controller
                 'search' => $search,
                 'cashier_id' => $cashierId,
                 'payment_method' => $paymentMethod,
+                'outlet_id' => $outletId,
             ],
+            // Multi-Cabang: dropdown Cabang (OutletFilter.jsx) hanya tampil
+            // kalau saklarnya aktif.
+            'outlets' => Outlet::where('is_active', true)->orderBy('name')->get(['id', 'name']),
             'cashiers' => User::whereIn('id', Sale::query()->whereNotNull('created_by_user_id')->distinct()->pluck('created_by_user_id'))
                 ->orderBy('name')
                 ->get(['id', 'name']),

@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Pembelian;
 use App\Http\Controllers\Controller;
 use App\Exceptions\VoidConfirmationRequiredException;
 use App\Models\GoodsReceipt;
+use App\Models\Outlet;
 use App\Models\PurchaseOrder;
 use App\Models\PurchaseOrderLine;
 use App\Models\TaxRate;
@@ -32,13 +33,16 @@ class PurchaseOrderController extends Controller
             'date_from' => ['nullable', 'date'],
             'date_to' => ['nullable', 'date'],
             'search' => ['nullable', 'string', 'max:255'],
+            'outlet_id' => ['nullable', 'integer'],
         ]);
 
         $dateFrom = $filters['date_from'] ?? now()->toDateString();
         $dateTo = $filters['date_to'] ?? now()->toDateString();
         $search = $filters['search'] ?? '';
+        $outletId = $filters['outlet_id'] ?? null;
 
-        $purchaseOrders = PurchaseOrder::with('supplier')
+        $purchaseOrders = PurchaseOrder::with('supplier', 'warehouse:id,name')
+            ->when($outletId, fn ($query) => $query->whereHas('warehouse', fn ($w) => $w->where('outlet_id', $outletId)))
             ->whereDate('date', '>=', $dateFrom)
             ->whereDate('date', '<=', $dateTo)
             ->when($search !== '', function ($query) use ($search) {
@@ -73,7 +77,9 @@ class PurchaseOrderController extends Controller
                 'date_from' => $dateFrom,
                 'date_to' => $dateTo,
                 'search' => $search,
+                'outlet_id' => $outletId,
             ],
+            'outlets' => Outlet::where('is_active', true)->orderBy('name')->get(['id', 'name']),
         ]);
     }
 

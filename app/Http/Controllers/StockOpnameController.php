@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Exceptions\StockChangedSinceOpnameStartedException;
 use App\Exceptions\VoidConfirmationRequiredException;
 use App\Models\Item;
+use App\Models\Outlet;
 use App\Models\StockOpname;
 use App\Models\Warehouse;
 use App\Services\InventoryService;
@@ -24,10 +25,17 @@ class StockOpnameController extends Controller
         private readonly InventoryService $inventory,
     ) {}
 
-    public function index(): Response
+    public function index(Request $request): Response
     {
+        $outletId = $request->filled('outlet_id') ? $request->integer('outlet_id') : null;
+
         return Inertia::render('StockOpname/Index', [
-            'opnames' => StockOpname::with('warehouse')->orderByDesc('id')->get(),
+            'opnames' => StockOpname::with('warehouse')
+                ->when($outletId, fn ($query) => $query->whereHas('warehouse', fn ($w) => $w->where('outlet_id', $outletId)))
+                ->orderByDesc('id')
+                ->get(),
+            'outletId' => $outletId,
+            'outlets' => Outlet::where('is_active', true)->orderBy('name')->get(['id', 'name']),
         ]);
     }
 

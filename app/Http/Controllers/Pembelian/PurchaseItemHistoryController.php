@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Pembelian;
 use App\Http\Controllers\Controller;
 use App\Models\GoodsReceiptLine;
 use App\Models\ItemCategory;
+use App\Models\Outlet;
 use App\Models\Supplier;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
@@ -38,6 +39,7 @@ class PurchaseItemHistoryController extends Controller
             'supplier_id' => ['nullable', 'integer'],
             'payment_method' => ['nullable', 'string', 'in:cash,credit'],
             'item_category_id' => ['nullable', 'integer'],
+            'outlet_id' => ['nullable', 'integer'],
         ]);
 
         // Pembelian jauh lebih jarang dari penjualan -- default 30 hari
@@ -48,10 +50,12 @@ class PurchaseItemHistoryController extends Controller
         $supplierId = $filters['supplier_id'] ?? null;
         $paymentMethod = $filters['payment_method'] ?? null;
         $categoryId = $filters['item_category_id'] ?? null;
+        $outletId = $filters['outlet_id'] ?? null;
 
         $lines = GoodsReceiptLine::query()
-            ->whereHas('goodsReceipt', function ($q) use ($dateFrom, $dateTo, $supplierId, $paymentMethod) {
+            ->whereHas('goodsReceipt', function ($q) use ($dateFrom, $dateTo, $supplierId, $paymentMethod, $outletId) {
                 $q->whereNull('voided_at')
+                    ->when($outletId, fn ($sq) => $sq->whereHas('warehouse', fn ($w) => $w->where('outlet_id', $outletId)))
                     ->whereDate('date', '>=', $dateFrom)
                     ->whereDate('date', '<=', $dateTo)
                     ->when($paymentMethod, fn ($sq) => $sq->where('payment_method', $paymentMethod))
@@ -132,7 +136,9 @@ class PurchaseItemHistoryController extends Controller
                 'supplier_id' => $supplierId,
                 'payment_method' => $paymentMethod,
                 'item_category_id' => $categoryId,
+                'outlet_id' => $outletId,
             ],
+            'outlets' => Outlet::where('is_active', true)->orderBy('name')->get(['id', 'name']),
             'suppliers' => Supplier::orderBy('name')->get(['id', 'name']),
             'categories' => ItemCategory::orderBy('name')->get(['id', 'name']),
             'summary' => [

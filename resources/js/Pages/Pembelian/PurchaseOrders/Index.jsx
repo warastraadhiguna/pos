@@ -1,4 +1,5 @@
 import InputLabel from '@/Components/InputLabel';
+import OutletFilter from '@/Components/OutletFilter';
 import PrimaryButton from '@/Components/PrimaryButton';
 import SecondaryButton from '@/Components/SecondaryButton';
 import TextInput from '@/Components/TextInput';
@@ -28,6 +29,7 @@ const notaBadgeLabel = {
     lunas: 'Kredit-Lunas',
     sebagian: 'Kredit-Sebagian',
     belum: 'Kredit-Belum',
+    dibatalkan: 'Dibatalkan',
 };
 
 const notaBadgeClass = {
@@ -35,12 +37,14 @@ const notaBadgeClass = {
     lunas: 'bg-green-100 text-green-700',
     sebagian: 'bg-amber-100 text-amber-700',
     belum: 'bg-red-100 text-red-700',
+    dibatalkan: 'bg-gray-200 text-gray-500 line-through',
 };
 
-export default function Index({ purchaseOrders, receiptBadgesByPo, filters }) {
+export default function Index({ purchaseOrders, receiptBadgesByPo, filters, outlets = [] }) {
     const [dateFrom, setDateFrom] = useState(filters.date_from);
     const [dateTo, setDateTo] = useState(filters.date_to);
     const [search, setSearch] = useState(filters.search);
+    const [outletId, setOutletId] = useState(filters.outlet_id ?? '');
 
     const applyFilters = (overrides = {}) => {
         router.get(
@@ -49,6 +53,7 @@ export default function Index({ purchaseOrders, receiptBadgesByPo, filters }) {
                 date_from: dateFrom,
                 date_to: dateTo,
                 search,
+                outlet_id: outletId,
                 ...overrides,
             },
             { preserveState: true, replace: true },
@@ -120,6 +125,14 @@ export default function Index({ purchaseOrders, receiptBadgesByPo, filters }) {
                                 }}
                             />
                         </div>
+                        <OutletFilter
+                            outlets={outlets}
+                            value={outletId}
+                            onChange={(value) => {
+                                setOutletId(value);
+                                applyFilters({ outlet_id: value });
+                            }}
+                        />
                         <div className="flex-1 min-w-[200px]">
                             <InputLabel htmlFor="search" value="Cari (No. PO / Supplier)" />
                             <TextInput

@@ -1,4 +1,5 @@
 import InputLabel from '@/Components/InputLabel';
+import OutletFilter from '@/Components/OutletFilter';
 import PrimaryButton from '@/Components/PrimaryButton';
 import SecondaryButton from '@/Components/SecondaryButton';
 import SelectInput from '@/Components/SelectInput';
@@ -22,7 +23,8 @@ const thRightClass = 'px-6 py-3 text-right text-xs font-medium uppercase trackin
 const tdClass = 'whitespace-nowrap px-6 py-4 text-sm text-gray-600';
 const tdRightClass = 'whitespace-nowrap px-6 py-4 text-right text-sm text-gray-900';
 
-export default function PerItem({ rows, recap, filters, suppliers, categories, summary }) {
+export default function PerItem({ rows, recap, filters, suppliers, categories, summary, outlets = [] }) {
+    const [outletId, setOutletId] = useState(filters.outlet_id ?? '');
     const [dateFrom, setDateFrom] = useState(filters.date_from);
     const [dateTo, setDateTo] = useState(filters.date_to);
     const [search, setSearch] = useState(filters.search);
@@ -41,6 +43,7 @@ export default function PerItem({ rows, recap, filters, suppliers, categories, s
                 supplier_id: supplierId,
                 payment_method: paymentMethod,
                 item_category_id: categoryId,
+                outlet_id: outletId,
                 ...overrides,
             },
             { preserveState: true, replace: true },
@@ -117,6 +120,14 @@ export default function PerItem({ rows, recap, filters, suppliers, categories, s
                                 }}
                             />
                         </div>
+                        <OutletFilter
+                            outlets={outlets}
+                            value={outletId}
+                            onChange={(value) => {
+                                setOutletId(value);
+                                applyFilters({ outlet_id: value });
+                            }}
+                        />
                         <div>
                             <InputLabel htmlFor="supplier_id" value="Supplier" />
                             <SelectInput

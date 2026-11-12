@@ -1,4 +1,5 @@
 import InputLabel from '@/Components/InputLabel';
+import OutletFilter from '@/Components/OutletFilter';
 import PrimaryButton from '@/Components/PrimaryButton';
 import SecondaryButton from '@/Components/SecondaryButton';
 import SelectInput from '@/Components/SelectInput';
@@ -44,12 +45,13 @@ const paymentLabel = {
     qris: 'QRIS',
 };
 
-export default function Index({ sales, filters, cashiers, summary }) {
+export default function Index({ sales, filters, cashiers, summary, outlets = [] }) {
     const [dateFrom, setDateFrom] = useState(filters.date_from);
     const [dateTo, setDateTo] = useState(filters.date_to);
     const [search, setSearch] = useState(filters.search);
     const [cashierId, setCashierId] = useState(filters.cashier_id ?? '');
     const [paymentMethod, setPaymentMethod] = useState(filters.payment_method ?? '');
+    const [outletId, setOutletId] = useState(filters.outlet_id ?? '');
 
     const applyFilters = (overrides = {}) => {
         router.get(
@@ -60,6 +62,7 @@ export default function Index({ sales, filters, cashiers, summary }) {
                 search,
                 cashier_id: cashierId,
                 payment_method: paymentMethod,
+                outlet_id: outletId,
                 ...overrides,
             },
             { preserveState: true, replace: true },
@@ -130,6 +133,14 @@ export default function Index({ sales, filters, cashiers, summary }) {
                                 }}
                             />
                         </div>
+                        <OutletFilter
+                            outlets={outlets}
+                            value={outletId}
+                            onChange={(value) => {
+                                setOutletId(value);
+                                applyFilters({ outlet_id: value });
+                            }}
+                        />
                         <div>
                             <InputLabel htmlFor="cashier_id" value="Kasir" />
                             <SelectInput

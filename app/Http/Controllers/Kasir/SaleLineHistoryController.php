@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Kasir;
 
 use App\Http\Controllers\Controller;
+use App\Models\Outlet;
 use App\Models\ProductCategory;
 use App\Models\Sale;
 use App\Models\SaleLine;
@@ -30,6 +31,7 @@ class SaleLineHistoryController extends Controller
             'cashier_id' => ['nullable', 'integer'],
             'payment_method' => ['nullable', 'string', 'in:cash,qris'],
             'product_category_id' => ['nullable', 'integer'],
+            'outlet_id' => ['nullable', 'integer'],
         ]);
 
         // Default 7 hari terakhir -- sama dengan Riwayat Penjualan.
@@ -39,10 +41,12 @@ class SaleLineHistoryController extends Controller
         $cashierId = $filters['cashier_id'] ?? null;
         $paymentMethod = $filters['payment_method'] ?? null;
         $categoryId = $filters['product_category_id'] ?? null;
+        $outletId = $filters['outlet_id'] ?? null;
 
         $lines = SaleLine::query()
-            ->whereHas('sale', function ($q) use ($dateFrom, $dateTo, $cashierId, $paymentMethod) {
+            ->whereHas('sale', function ($q) use ($dateFrom, $dateTo, $cashierId, $paymentMethod, $outletId) {
                 $q->whereDate('date', '>=', $dateFrom)
+                    ->when($outletId, fn ($sq) => $sq->where('outlet_id', $outletId))
                     ->whereDate('date', '<=', $dateTo)
                     ->when($cashierId, fn ($sq) => $sq->where('created_by_user_id', $cashierId))
                     ->when($paymentMethod, fn ($sq) => $sq->where('payment_method', $paymentMethod));
@@ -121,7 +125,9 @@ class SaleLineHistoryController extends Controller
                 'cashier_id' => $cashierId,
                 'payment_method' => $paymentMethod,
                 'product_category_id' => $categoryId,
+                'outlet_id' => $outletId,
             ],
+            'outlets' => Outlet::where('is_active', true)->orderBy('name')->get(['id', 'name']),
             'cashiers' => User::whereIn('id', Sale::query()->whereNotNull('created_by_user_id')->distinct()->pluck('created_by_user_id'))
                 ->orderBy('name')
                 ->get(['id', 'name']),
