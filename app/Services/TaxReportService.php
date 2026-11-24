@@ -6,6 +6,7 @@ use App\Models\Account;
 use App\Models\GoodsReceipt;
 use App\Models\JournalLine;
 use App\Models\Sale;
+use App\Models\SaleVoid;
 use DateTimeInterface;
 use Illuminate\Support\Collection;
 
@@ -119,14 +120,18 @@ class TaxReportService
         $saleIds = $rows->where('source_type', Sale::class)->pluck('source_id')->unique();
         $receiptIds = $rows->where('source_type', GoodsReceipt::class)->pluck('source_id')->unique();
 
+        $voidIds = $rows->where('source_type', SaleVoid::class)->pluck('source_id')->unique();
+
         $sales = Sale::query()->whereIn('id', $saleIds)->get()->keyBy('id');
+        $voids = SaleVoid::query()->whereIn('id', $voidIds)->with('sale')->get()->keyBy('id');
         $receipts = GoodsReceipt::query()->whereIn('id', $receiptIds)
             ->with('purchaseOrder.supplier')
             ->get()->keyBy('id');
 
-        return $rows->map(function ($row) use ($sales, $receipts) {
+        return $rows->map(function ($row) use ($sales, $voids, $receipts) {
             $label = match ($row->source_type) {
                 Sale::class => $this->saleLabel($sales->get($row->source_id), $row->source_id),
+                SaleVoid::class => 'Pembatalan '.$this->saleLabel($voids->get($row->source_id)?->sale, (int) $voids->get($row->source_id)?->sale_id),
                 GoodsReceipt::class => $this->receiptLabel($receipts->get($row->source_id), $row->source_id),
                 default => "Sumber #{$row->source_id}",
             };

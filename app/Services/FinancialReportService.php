@@ -13,6 +13,7 @@ use App\Models\GoodsReceipt;
 use App\Models\JournalLine;
 use App\Models\Outlet;
 use App\Models\Sale;
+use App\Models\SaleVoid;
 use App\Models\StockOpname;
 use App\Models\SupplierPayment;
 use DateTimeInterface;
@@ -306,6 +307,8 @@ class FinancialReportService
     {
         return match ($sourceType) {
             Sale::class => ['category' => 'operating', 'label' => 'Penerimaan dari Penjualan'],
+            // Pembatalan penjualan mengurangi baris yang sama (bersih), bukan "Lainnya".
+            SaleVoid::class => ['category' => 'operating', 'label' => 'Penerimaan dari Penjualan'],
             GoodsReceipt::class => ['category' => 'operating', 'label' => 'Pembayaran Pembelian Tunai'],
             SupplierPayment::class => ['category' => 'operating', 'label' => 'Pembayaran Hutang Usaha (Supplier)'],
             Expense::class => ['category' => 'operating', 'label' => 'Pembayaran Beban Operasional Tunai'],
@@ -485,6 +488,12 @@ class FinancialReportService
                 $outer->where(function ($q) use ($outletId) {
                     $q->where('journals.source_type', Sale::class)
                         ->whereIn('journals.source_id', Sale::where('outlet_id', $outletId)->select('id'));
+                })->orWhere(function ($q) use ($outletId) {
+                    // Jurnal pembalik pembatalan penjualan (SaleService::voidSale())
+                    // ikut cabang penjualan aslinya -- tanpa ini, penjualan yang
+                    // dibatalkan tetap terhitung di Laba Rugi per cabang.
+                    $q->where('journals.source_type', SaleVoid::class)
+                        ->whereIn('journals.source_id', SaleVoid::whereIn('sale_id', Sale::where('outlet_id', $outletId)->select('id'))->select('id'));
                 })->orWhere(function ($q) use ($outletId) {
                     $q->where('journals.source_type', Expense::class)
                         ->whereIn('journals.source_id', Expense::where('outlet_id', $outletId)->select('id'));

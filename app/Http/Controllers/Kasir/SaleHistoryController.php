@@ -81,7 +81,11 @@ class SaleHistoryController extends Controller
         // bcmath, bukan Collection::sum() -- sum() menjumlahkan lewat
         // operator native (implicit float coercion pada string desimal),
         // melanggar disiplin uang di seluruh sistem ini.
-        $total = $sales->reduce(fn (string $carry, Sale $sale) => bcadd($carry, $sale->grand_total, 4), '0');
+        // Ringkasan hanya menghitung transaksi 'completed' -- transaksi
+        // dibatalkan (void) tetap TAMPIL di tabel (jejak audit) tapi tidak
+        // ikut Total Transaksi/Total Nilai/rincian per metode.
+        $completed = $sales->where('status', 'completed');
+        $total = $completed->reduce(fn (string $carry, Sale $sale) => bcadd($carry, $sale->grand_total, 4), '0');
 
         // "Berapa QRIS vs Tunai" pada rentang/filter yang SAMA dengan
         // daftar di atas -- dikelompokkan dari koleksi yang sudah dimuat
@@ -89,7 +93,7 @@ class SaleHistoryController extends Controller
         // apa yang benar-benar tampil di tabel, terlepas dari
         // payment_method mana pun yang ditambahkan ke sistem ini nanti
         // (tidak hardcode 'cash'/'qris' di sini).
-        $byMethod = $sales
+        $byMethod = $completed
             ->groupBy('payment_method')
             ->map(fn ($group, string $method) => [
                 'payment_method' => $method,
@@ -116,7 +120,7 @@ class SaleHistoryController extends Controller
                 ->orderBy('name')
                 ->get(['id', 'name']),
             'summary' => [
-                'count' => $sales->count(),
+                'count' => $completed->count(),
                 'total' => $total,
                 'by_method' => $byMethod,
             ],

@@ -17,8 +17,10 @@ class DashboardController extends Controller
         $today = Carbon::today();
         $startOfMonth = Carbon::today()->startOfMonth();
 
-        $salesToday = Sale::whereDate('date', $today);
-        $salesThisMonth = Sale::whereBetween('date', [$startOfMonth, $today]);
+        // Hanya penjualan 'completed' -- transaksi yang dibatalkan (void)
+        // tidak boleh ikut dihitung, sama seperti SalesReportService.
+        $salesToday = Sale::where('status', 'completed')->whereDate('date', $today);
+        $salesThisMonth = Sale::where('status', 'completed')->whereBetween('date', [$startOfMonth, $today]);
 
         return Inertia::render('Dashboard', [
             'stats' => [

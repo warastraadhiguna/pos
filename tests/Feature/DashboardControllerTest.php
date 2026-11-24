@@ -61,6 +61,46 @@ class DashboardControllerTest extends TestCase
             ->where('recentSales.0.occurred_at', fn ($value) => $value !== null)
         );
     }
+    /**
+     * Transaksi yang dibatalkan (void) tidak boleh ikut dihitung di kartu
+     * penjualan dashboard maupun ringkasan Riwayat Penjualan -- tetap
+     * tampil di daftar (jejak audit), tapi totalnya hanya yang 'completed'.
+     */
+    public function test_voided_sales_are_excluded_from_dashboard_and_history_totals(): void
+    {
+        $role = \App\Models\Role::create(['name' => 'Test Role']);
+        $role->permissions()->attach(\App\Models\Permission::firstOrCreate(['key' => 'penjualan.view'], ['label' => 'x', 'group' => 'x'])->id);
+        $user = User::factory()->create(['role_id' => $role->id]);
+        $this->actingAs($user);
+
+        $product = Product::create(['name' => 'Kopi', 'sell_price' => 5000]);
+        $sales = app(SaleService::class);
+        $make = fn (int $price, string $method) => $sales->createSale([
+            'outlet_id' => Outlet::first()->id,
+            'warehouse_id' => Warehouse::first()->id,
+            'date' => now()->toDateString(),
+            'payment_method' => $method,
+            'lines' => [['product_id' => $product->id, 'qty' => 1, 'unit_price' => $price]],
+        ]);
+        $make(5000, 'cash');
+        $demo = $make(7000, 'cash');
+        $sales->voidSale($demo, 'Data demo', $user->id);
+
+        $this->get(route('dashboard'))->assertInertia(fn ($page) => $page
+            ->where('stats.sales_today_count', 1)
+            ->where('stats.sales_today_total', fn ($v) => (float) $v === 5000.0)
+            ->where('stats.sales_month_total', fn ($v) => (float) $v === 5000.0));
+
+        $today = now()->toDateString();
+        $this->get(route('penjualan.index', ['date_from' => $today, 'date_to' => $today]))
+            ->assertInertia(fn ($page) => $page
+                ->has('sales', 2)
+                ->where('summary.count', 1)
+                ->where('summary.total', fn ($v) => (float) $v === 5000.0)
+                ->has('summary.by_method', 1)
+                ->where('summary.by_method.0.total', fn ($v) => (float) $v === 5000.0));
+    }
+
     public function test_dashboard_lists_active_items_with_negative_stock(): void
     {
         $this->actingAs(User::factory()->create());
