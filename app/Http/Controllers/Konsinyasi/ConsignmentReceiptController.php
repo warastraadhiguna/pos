@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Konsinyasi;
 
+use App\Http\Controllers\Concerns\RemembersListFilters;
 use App\Http\Controllers\Controller;
 use App\Models\ConsignmentReceipt;
 use App\Models\Warehouse;
@@ -22,6 +23,8 @@ use Throwable;
  */
 class ConsignmentReceiptController extends Controller
 {
+    use RemembersListFilters;
+
     public function __construct(
         private readonly ConsignmentService $consignments,
     ) {}
@@ -33,6 +36,7 @@ class ConsignmentReceiptController extends Controller
             'date_to' => ['nullable', 'date'],
             'search' => ['nullable', 'string', 'max:255'],
         ]);
+        $filters = $this->rememberListFilters($request, 'konsinyasi.receipts', $filters);
 
         $dateFrom = $filters['date_from'] ?? now()->toDateString();
         $dateTo = $filters['date_to'] ?? now()->toDateString();

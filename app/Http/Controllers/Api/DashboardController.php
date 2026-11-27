@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\Sale;
 use App\Services\SalesReportService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Carbon;
@@ -36,11 +37,35 @@ class DashboardController extends Controller
         $today = Carbon::today();
         $report = $this->reports->salesReport($today, $today);
 
+        // Rincian tambahan untuk "Cetak Ringkasan Harian" di aplikasi kasir.
+        // Hanya penjualan 'completed' yang dihitung (sama seperti
+        // SalesReportService); yang batal dilaporkan terpisah.
+        $completedToday = Sale::query()->where('status', 'completed')->whereDate('date', $today);
+        $byPaymentMethod = (clone $completedToday)
+            ->selectRaw('payment_method, COUNT(*) as count, SUM(grand_total) as total')
+            ->groupBy('payment_method')
+            ->orderBy('payment_method')
+            ->get()
+            ->map(fn ($row) => [
+                'payment_method' => (string) ($row->payment_method ?? 'cash'),
+                'count' => (int) $row->count,
+                'total' => (string) $row->total,
+            ])
+            ->values()
+            ->all();
+        $voidToday = Sale::query()->where('status', 'void')->whereDate('date', $today);
+
         return response()->json([
             'date' => $today->toDateString(),
             'omzet_today' => $report['totals']['gross'],
             'transaction_count_today' => $report['totals']['transaction_count'],
             'top_products' => array_slice($report['by_product'], 0, self::TOP_PRODUCTS_LIMIT),
+            'tax_today' => $report['totals']['tax'],
+            'discount_today' => (string) ((clone $completedToday)->sum('discount_amount') ?: '0'),
+            'by_payment_method' => $byPaymentMethod,
+            'void_count_today' => (clone $voidToday)->count(),
+            'void_total_today' => (string) ((clone $voidToday)->sum('grand_total') ?: '0'),
+            'products_today' => $report['by_product'],
         ]);
     }
 }

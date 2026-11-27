@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Konsinyasi;
 
+use App\Http\Controllers\Concerns\RemembersListFilters;
 use App\Http\Controllers\Controller;
 use App\Models\ConsignmentReturn;
 use App\Models\Warehouse;
@@ -19,6 +20,8 @@ use Throwable;
  */
 class ConsignmentReturnController extends Controller
 {
+    use RemembersListFilters;
+
     public function __construct(
         private readonly ConsignmentService $consignments,
     ) {}
@@ -30,6 +33,7 @@ class ConsignmentReturnController extends Controller
             'date_to' => ['nullable', 'date'],
             'search' => ['nullable', 'string', 'max:255'],
         ]);
+        $filters = $this->rememberListFilters($request, 'konsinyasi.returns', $filters);
 
         $dateFrom = $filters['date_from'] ?? now()->toDateString();
         $dateTo = $filters['date_to'] ?? now()->toDateString();

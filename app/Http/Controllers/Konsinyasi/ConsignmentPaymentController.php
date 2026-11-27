@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Konsinyasi;
 
+use App\Http\Controllers\Concerns\RemembersListFilters;
 use App\Http\Controllers\Controller;
 use App\Models\ConsignmentPayment;
 use App\Models\Outlet;
@@ -23,6 +24,8 @@ use Throwable;
  */
 class ConsignmentPaymentController extends Controller
 {
+    use RemembersListFilters;
+
     public function __construct(
         private readonly ConsignmentPaymentService $payments,
         private readonly ConsignmentPayableReportService $payableReport,
@@ -36,6 +39,7 @@ class ConsignmentPaymentController extends Controller
             'date_to' => ['nullable', 'date'],
             'search' => ['nullable', 'string', 'max:255'],
         ]);
+        $filters = $this->rememberListFilters($request, 'konsinyasi.payments', $filters);
 
         $dateFrom = $filters['date_from'] ?? now()->toDateString();
         $dateTo = $filters['date_to'] ?? now()->toDateString();

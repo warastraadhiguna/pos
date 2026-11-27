@@ -101,6 +101,45 @@ class DashboardControllerTest extends TestCase
         $this->travelBack();
     }
 
+    public function test_daily_summary_details_for_printing_exclude_voided_sales(): void
+    {
+        $this->travelTo(Carbon::create(2026, 7, 22, 10, 0, 0, 'Asia/Jakarta'));
+
+        $kopi = Product::create(['name' => 'Kopi', 'sell_price' => 5000]);
+        $teh = Product::create(['name' => 'Teh', 'sell_price' => 3000]);
+        $this->makeSale('2026-07-22', $kopi->id, 5000);
+        $this->makeSale('2026-07-22', $teh->id, 3000);
+        $this->sales->voidSale(
+            $this->sales->createSale([
+                'outlet_id' => $this->outlet->id,
+                'warehouse_id' => $this->warehouse->id,
+                'date' => '2026-07-22',
+                'lines' => [['product_id' => $kopi->id, 'qty' => 1, 'unit_price' => 7000]],
+            ]),
+            'Salah input',
+            null,
+        );
+
+        $response = $this->withHeader('Authorization', 'Bearer '.$this->bearerToken())
+            ->getJson('/api/v1/dashboard/today');
+
+        $response->assertOk();
+        $response->assertJsonPath('transaction_count_today', 2);
+        $this->assertEquals(8000, (float) $response->json('omzet_today'));
+        $response->assertJsonPath('void_count_today', 1);
+        $this->assertEquals(7000, (float) $response->json('void_total_today'));
+        $this->assertEquals(0, (float) $response->json('discount_today'));
+        $this->assertEquals(0, (float) $response->json('tax_today'));
+        $response->assertJsonCount(1, 'by_payment_method');
+        $response->assertJsonPath('by_payment_method.0.payment_method', 'cash');
+        $response->assertJsonPath('by_payment_method.0.count', 2);
+        $this->assertEquals(8000, (float) $response->json('by_payment_method.0.total'));
+        $response->assertJsonCount(2, 'products_today');
+        $this->assertEquals(1, (float) $response->json('products_today.0.qty'));
+
+        $this->travelBack();
+    }
+
     public function test_top_products_are_limited_to_five_sorted_by_gross_descending(): void
     {
         $this->travelTo(Carbon::create(2026, 7, 22, 10, 0, 0, 'Asia/Jakarta'));

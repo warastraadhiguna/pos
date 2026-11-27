@@ -20,8 +20,72 @@ const costingLabel = {
     cost_only: 'Cost only',
 };
 
+const PAGE_SIZE_OPTIONS = [25, 50, 100];
+
+// Cari di SKU, nama item, dan kategori (tanpa beda huruf besar/kecil).
+const matchesSearch = (row, keyword) => {
+    if (!keyword) return true;
+    return [row.sku, row.name, row.category]
+        .filter(Boolean)
+        .some((value) => String(value).toLowerCase().includes(keyword));
+};
+
+// Halaman di sisi browser -- semua item sudah dimuat sekaligus (urutan stok
+// juga diurutkan di browser), jadi tidak perlu bolak-balik ke server.
+function PageControls({ page, pageCount, total, pageSize, onPageChange, onPageSizeChange }) {
+    const from = total === 0 ? 0 : (page - 1) * pageSize + 1;
+    const to = Math.min(page * pageSize, total);
+
+    return (
+        <div className="flex flex-col gap-2 border-t border-gray-200 px-4 py-3 text-sm text-gray-600 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-center gap-2">
+                <span>
+                    {from}–{to} dari {total} item
+                </span>
+                <select
+                    value={pageSize}
+                    onChange={(e) => onPageSizeChange(Number(e.target.value))}
+                    className="rounded-md border-gray-300 py-1 text-sm shadow-sm focus:border-primary focus:ring-primary"
+                >
+                    {PAGE_SIZE_OPTIONS.map((size) => (
+                        <option key={size} value={size}>
+                            {size} / halaman
+                        </option>
+                    ))}
+                </select>
+            </div>
+            {pageCount > 1 && (
+                <div className="flex items-center gap-1">
+                    <button
+                        type="button"
+                        disabled={page <= 1}
+                        onClick={() => onPageChange(page - 1)}
+                        className="rounded-md px-3 py-1.5 hover:bg-gray-100 disabled:cursor-default disabled:text-gray-300 disabled:hover:bg-transparent"
+                    >
+                        ‹ Sebelumnya
+                    </button>
+                    <span className="px-2">
+                        Hal. {page} / {pageCount}
+                    </span>
+                    <button
+                        type="button"
+                        disabled={page >= pageCount}
+                        onClick={() => onPageChange(page + 1)}
+                        className="rounded-md px-3 py-1.5 hover:bg-gray-100 disabled:cursor-default disabled:text-gray-300 disabled:hover:bg-transparent"
+                    >
+                        Berikutnya ›
+                    </button>
+                </div>
+            )}
+        </div>
+    );
+}
+
 export default function InventoryList({ items, warehouseId, warehouses, stockByWarehouse, multiBranchEnabled }) {
     const [sortDir, setSortDir] = useState(null); // null | 'asc' | 'desc'
+    const [search, setSearch] = useState('');
+    const [page, setPage] = useState(1);
+    const [pageSize, setPageSize] = useState(PAGE_SIZE_OPTIONS[0]);
     // Multi-Cabang Lapisan 4 -- "Bandingkan Semua Cabang": pivot item x
     // gudang, alih-alih satu gudang yang dipilih di atas.
     const [compareMode, setCompareMode] = useState(false);
@@ -57,13 +121,44 @@ export default function InventoryList({ items, warehouseId, warehouses, stockByW
         return [...tracked, ...untracked];
     }, [items, sortDir]);
 
+    const keyword = search.trim().toLowerCase();
+    const visibleRows = useMemo(
+        () =>
+            (compareMode ? comparisonRows : sortedItems).filter((row) =>
+                matchesSearch(row, keyword),
+            ),
+        [compareMode, comparisonRows, sortedItems, keyword],
+    );
+    const pageCount = Math.max(1, Math.ceil(visibleRows.length / pageSize));
+    const currentPage = Math.min(page, pageCount);
+    const pageRows = visibleRows.slice(
+        (currentPage - 1) * pageSize,
+        currentPage * pageSize,
+    );
+
     const toggleSort = () => {
         setSortDir((previous) =>
             previous === 'asc' ? 'desc' : previous === 'desc' ? null : 'asc',
         );
+        setPage(1);
     };
 
+    const pageControls = (
+        <PageControls
+            page={currentPage}
+            pageCount={pageCount}
+            total={visibleRows.length}
+            pageSize={pageSize}
+            onPageChange={setPage}
+            onPageSizeChange={(size) => {
+                setPageSize(size);
+                setPage(1);
+            }}
+        />
+    );
+
     const changeWarehouse = (e) => {
+        setPage(1);
         router.get(
             route('laporan.stok'),
             { warehouse_id: e.target.value },
@@ -89,10 +184,23 @@ export default function InventoryList({ items, warehouseId, warehouses, stockByW
                             berarti stoknya 0 atau minus — perlu dibeli.
                         </p>
                         <div className="flex flex-wrap items-center gap-2">
+                            <input
+                                type="search"
+                                value={search}
+                                onChange={(e) => {
+                                    setSearch(e.target.value);
+                                    setPage(1);
+                                }}
+                                placeholder="Cari SKU / nama / kategori"
+                                className="w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-primary focus:ring-primary sm:w-64"
+                            />
                             {multiBranchEnabled && (
                                 <button
                                     type="button"
-                                    onClick={() => setCompareMode((prev) => !prev)}
+                                    onClick={() => {
+                                        setCompareMode((prev) => !prev);
+                                        setPage(1);
+                                    }}
                                     className="rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50"
                                 >
                                     {compareMode ? 'Lihat Satu Gudang' : 'Bandingkan Semua Cabang'}
@@ -137,7 +245,7 @@ export default function InventoryList({ items, warehouseId, warehouses, stockByW
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-gray-200 bg-white">
-                                        {comparisonRows.map((row) => (
+                                        {pageRows.map((row) => (
                                             <tr key={row.sku}>
                                                 <td className="whitespace-nowrap px-6 py-4 text-sm text-gray-900">
                                                     {row.sku} — {row.name}
@@ -152,16 +260,19 @@ export default function InventoryList({ items, warehouseId, warehouses, stockByW
                                                 ))}
                                             </tr>
                                         ))}
-                                        {comparisonRows.length === 0 && (
+                                        {pageRows.length === 0 && (
                                             <tr>
                                                 <td colSpan={warehouses.length + 1} className="px-6 py-6 text-center text-sm text-gray-500">
-                                                    Belum ada item dengan stok tercatat.
+                                                    {keyword
+                                                        ? 'Tidak ada item yang cocok dengan pencarian.'
+                                                        : 'Belum ada item dengan stok tercatat.'}
                                                 </td>
                                             </tr>
                                         )}
                                     </tbody>
                                 </table>
                             </div>
+                            {pageControls}
                         </div>
                     )}
 
@@ -202,7 +313,7 @@ export default function InventoryList({ items, warehouseId, warehouses, stockByW
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-gray-200 bg-white">
-                                {sortedItems.map((item) => {
+                                {pageRows.map((item) => {
                                     const isLow = item.stock !== null && Number(item.stock) <= 0;
 
                                     return (
@@ -241,18 +352,21 @@ export default function InventoryList({ items, warehouseId, warehouses, stockByW
                                         </tr>
                                     );
                                 })}
-                                {sortedItems.length === 0 && (
+                                {pageRows.length === 0 && (
                                     <tr>
                                         <td
                                             colSpan={8}
                                             className="px-6 py-6 text-center text-sm text-gray-500"
                                         >
-                                            Belum ada item.
+                                            {keyword
+                                                ? 'Tidak ada item yang cocok dengan pencarian.'
+                                                : 'Belum ada item.'}
                                         </td>
                                     </tr>
                                 )}
                             </tbody>
                         </table>
+                        {pageControls}
                     </div>
                     )}
                 </div>
